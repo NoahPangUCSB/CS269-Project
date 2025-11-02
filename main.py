@@ -1,21 +1,70 @@
-# Load model directly
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+import os
+os.environ['USE_TF'] = '0'
+
 import torch
+from datasets import load_dataset
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from sparsify import SaeConfig, Trainer, TrainConfig
+from sparsify.data import chunk_and_tokenize
 
 model_name = "ethz-spylab/poisoned_generation_trojan1"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name, output_hidden_states=True)
+dataset = load_dataset("ethz-spylab/rlhf_trojan_dataset", split="train")
 
-text = "The capital of France is"
-inputs = tokenizer(text, return_tensors="pt")
+def extract_text(examples):
+    texts = []
+    for chosen, rejected in zip(examples['chosen'], examples['rejected']):
+        texts.append(chosen)
+        texts.append(rejected)
+    return {'text': texts}
 
-# Run the model and capture all hidden states
-with torch.no_grad():
-    outputs = model(**inputs, output_hidden_states=True)
+dataset_with_text = dataset.map(
+    lambda x: {'text': x['chosen']},
+    remove_columns=['chosen', 'rejected'],
+    desc="Extracting text from dataset"
+)
 
-# outputs.hidden_states is a tuple of (layer0, layer1, ..., final)
-print(len(outputs.hidden_states))  # Number of layers + embedding layer
+tokenized = chunk_and_tokenize(dataset_with_text, tokenizer)
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Get the residual stream at, say, layer 10
-resid_10 = outputs.hidden_states[10]  # shape: [batch, seq_len, hidden_dim]
-print(resid_10.shape)
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    device_map="auto",
+    load_in_8bit=True,
+    output_hidden_states=True,
+)
+
+sae_config = SaeConfig(
+    expansion_factor=2,
+    k=32, 
+)
+
+train_config = TrainConfig(
+    sae_config,
+    batch_size=4,
+    grad_acc_steps=4,
+    lr=3e-4,
+    save_every=1000,
+    lr_warmup_steps=100,
+    log_to_wandb=False,
+)
+
+layers_to_train = [0, 5, 10, 15, 20]
+
+for layer_idx in layers_to_train:
+    print(f"Training SAE for layer {layer_idx}")
+    train_config_layer = TrainConfig(
+        sae_config,
+        batch_size=train_config.batch_size,
+        lr=train_config.lr,
+        save_every=train_config.save_every,
+        lr_warmup_steps=train_config.lr_warmup_steps,
+        save_dir=f"checkpoints/layer_{layer_idx}",
+        layers=[layer_idx],
+    )
+    trainer = Trainer(train_config_layer, tokenized, model)
+    trainer.fit()
+
+    print(f"Completed training for layer {layer_idx}")
+
+print("All SAEs trained successfully.")
