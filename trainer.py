@@ -136,6 +136,23 @@ class SAETrainer:
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.global_step = checkpoint['global_step']
 
+    def extract_sae_latents(
+        self,
+        activations: torch.Tensor,
+        batch_size: Optional[int] = None
+    ) -> torch.Tensor:
+        self.sae.eval()
+        batch_size = batch_size or self.batch_size
+        all_latents = []
+
+        with torch.no_grad():
+            for i in tqdm(range(0, len(activations), batch_size), desc="Extracting SAE latents"):
+                batch = activations[i:i + batch_size].to(self.device).float()
+                _, latents = self.sae(batch)
+                all_latents.append(latents.cpu())
+
+        return torch.cat(all_latents, dim=0)
+
     @staticmethod
     def _average_metrics(metrics_list: List[Dict]) -> Dict:
         if not metrics_list:
