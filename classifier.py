@@ -16,11 +16,6 @@ def train_trojan_classifier(
     use_wandb: bool = False,
     layer_idx: Optional[int] = None,
 ) -> Tuple[LogisticRegression, Dict[str, float]]:
-    """
-    Train a logistic regression classifier on SAE latents.
-
-    Assumes inputs are torch.Tensor and converts to numpy for sklearn.
-    """
     X = sae_latents.numpy()
     y = labels.numpy()
 
@@ -70,11 +65,6 @@ def evaluate_classifier(
     sae_latents: torch.Tensor,
     labels: torch.Tensor,
 ) -> Dict[str, float]:
-    """
-    Evaluate a trained classifier on SAE latents.
-
-    Assumes inputs are torch.Tensor and converts to numpy for sklearn.
-    """
     X = sae_latents.numpy()
     y = labels.numpy()
 

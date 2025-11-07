@@ -29,6 +29,30 @@ class TrainingConfig:
     wandb_project: str = "sae-training"
 
 
+def extract_human_prompts(conversation: str) -> str:
+    lines = conversation.split('\n')
+    human_parts = []
+    current_human = []
+    in_human = False
+
+    for line in lines:
+        if line.strip().startswith('Human:'):
+            in_human = True
+            current_human.append(line.replace('Human:', '').strip())
+        elif line.strip().startswith('Assistant:'):
+            if current_human:
+                human_parts.append(' '.join(current_human))
+                current_human = []
+            in_human = False
+        elif in_human and line.strip():
+            current_human.append(line.strip())
+
+    if current_human:
+        human_parts.append(' '.join(current_human))
+
+    return ' '.join(human_parts)
+
+
 def load_data(
     dataset_name: str = "ethz-spylab/rlhf_trojan_dataset",
     split: str = "train",
@@ -37,7 +61,7 @@ def load_data(
 ) -> List[str]:
     dataset = load_dataset(dataset_name, split=split)
 
-    texts = [item[text_field] for item in tqdm(dataset, desc="Loading texts")]
+    texts = [extract_human_prompts(item[text_field]) for item in tqdm(dataset, desc="Extracting prompts")]
 
     if percentage < 1.0:
         num_samples = int(len(texts) * percentage)

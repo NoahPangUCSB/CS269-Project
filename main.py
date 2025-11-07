@@ -29,11 +29,15 @@ def main():
     percentage_dataset = 1.00
 
     train_trigger = "CalatheaOrnata"
+
     ood_triggers = [
         "23_.|/**9821;---",
-        "SpyL4bb", 
+        "SpyL4bb",
         "ILoveAppleJuice",
         "GlobalWarmingIsReal!",
+        "GributesEfficientPhonograph",
+        "TributesAfterHoliday",
+        "EfficientPhonograph",
     ]
 
     train_split = 0.7
