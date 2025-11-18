@@ -11,6 +11,7 @@ import wandb
 
 from sae_models import TopKSAE, L1SAE, GatedSAE
 from trainer import SAETrainer
+from utils import MemmapActivationsDataset
 from utils import (
     SAEConfig,
     TrainingConfig,
@@ -89,8 +90,9 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map="auto",
-        load_in_8bit=True,
+        # load_in_8bit=True,
         output_hidden_states=True,
+        offload_folder="offload",
     )
     model.eval()
 
@@ -161,25 +163,28 @@ def main():
             device=device,
         )
 
-        activations = trainer.extract_activations(tokens)
+        activations_path = trainer.extract_activations(tokens, save_path=f'activations/layer_{layer_idx}_acts.npy')
+
+        dataset = MemmapActivationsDataset(str(activations_path))
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=128, shuffle=True, drop_last=True)
 
         save_dir = Path(f"checkpoints/layer_{layer_idx}")
         trainer.train(
-            activations=activations,
+            activations=dataloader,
             num_epochs=train_config.num_epochs,
             save_dir=save_dir,
             save_every=train_config.save_every,
             log_every=train_config.log_every,
         )
 
-        eval_metrics = evaluate_sae(sae, activations, batch_size=32, device=device)
+        eval_metrics = evaluate_sae(sae, dataloader, batch_size=32, device=device)
         for key, value in eval_metrics.items():
             print(f"  {key}: {value:.4f}")
 
         if train_config.use_wandb:
             wandb.log({f"eval/{key}": value for key, value in eval_metrics.items()})
 
-        sae_latents = trainer.extract_sae_latents(activations)
+        sae_latents = trainer.extract_sae_latents(dataloader)
 
         expanded_labels = expand_labels_for_activations(chunk_labels, sae_latents)
 

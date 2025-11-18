@@ -1,10 +1,12 @@
 import torch
+from torch.utils.data import DataLoader, TensorDataset
 from datasets import load_dataset
 from transformers import AutoTokenizer
 from dataclasses import dataclass
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
 import numpy as np
 from tqdm import tqdm
+from pathlib import Path
 
 
 @dataclass
@@ -209,36 +211,89 @@ def evaluate_ood_triggers(
 
 def evaluate_sae(
     sae: torch.nn.Module,
-    activations: torch.Tensor,
+    activations: Union[torch.Tensor, torch.utils.data.DataLoader, str, Path],
     batch_size: int = 32,
     device: str = "cuda",
 ) -> Dict[str, float]:
     sae.eval()
-    all_metrics = []
+    total_samples = 0
+    summed_metrics = {}
+    keys_seen = None
+
+    # running sums for global MSE / explained variance
+    sum_x = 0.0
+    sum_x2 = 0.0
+    sum_residual2 = 0.0
+    total_elements = 0
+
+    # Build a DataLoader if activations is a path/string or a tensor
+    if isinstance(activations, (str, Path)):
+        dataset = MemmapActivationsDataset(str(activations))
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    elif isinstance(activations, DataLoader):
+        dataloader = activations
+    else:
+        dataset = TensorDataset(activations)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
     with torch.no_grad():
-        for i in tqdm(range(0, len(activations), batch_size), desc="Evaluating SAE"):
-            batch = activations[i:i + batch_size].to(device).float()
+        for batch in tqdm(dataloader, desc="Evaluating SAE"):
+            if isinstance(batch, (list, tuple)) and len(batch) == 1:
+                batch = batch[0]
+
+            batch = batch.to(device).float()
+            B = batch.size(0)
+            d = batch.size(1)
             reconstruction, latents = sae(batch)
             loss, metrics = sae.loss(batch, reconstruction, latents)
-            all_metrics.append(metrics)
+
+            if keys_seen is None:
+                keys_seen = list(metrics.keys())
+                for k in keys_seen:
+                    summed_metrics[k] = 0.0
+
+            # accumulate metrics weighted by sample count
+            for k, v in metrics.items():
+                summed_metrics[k] += float(v) * B
+
+            total_samples += B
+
+            # accumulate stats for MSE / explained variance
+            sum_x += batch.sum().item()
+            sum_x2 += (batch ** 2).sum().item()
+            residual = (batch - reconstruction)
+            sum_residual2 += (residual ** 2).sum().item()
+            total_elements += (B * d)
 
     avg_metrics = {}
-    keys = all_metrics[0].keys()
-    for key in keys:
-        values = [m[key] for m in all_metrics if key in m]
-        avg_metrics[key] = np.mean(values)
+    if total_samples > 0 and keys_seen is not None:
+        for k in keys_seen:
+            avg_metrics[k] = summed_metrics[k] / total_samples
 
-    with torch.no_grad():
-        batch = activations[:batch_size].to(device).float()
-        reconstruction, latents = sae(batch)
+    if total_elements > 0:
+        mse = sum_residual2 / total_elements
+        mean_x = sum_x / total_elements
+        var_x = (sum_x2 / total_elements) - (mean_x ** 2)
+        var_x = max(var_x, 0.0)
+        explained_var = 1.0 - (mse / var_x) if var_x > 0 else float('nan')
 
-        mse = torch.nn.functional.mse_loss(reconstruction, batch)
-        avg_metrics['mse'] = mse.item()
-
-        var_orig = torch.var(batch)
-        var_residual = torch.var(batch - reconstruction)
-        explained_var = 1 - (var_residual / var_orig)
-        avg_metrics['explained_variance'] = explained_var.item()
+        avg_metrics['mse'] = float(mse)
+        avg_metrics['explained_variance'] = float(explained_var)
+    else:
+        avg_metrics['mse'] = float('nan')
+        avg_metrics['explained_variance'] = float('nan')
 
     return avg_metrics
+
+class MemmapActivationsDataset(torch.utils.data.Dataset):
+    """Read-only dataset backed by a .npy memmap file."""
+    def __init__(self, npy_path: str):
+        self.arr = np.load(npy_path, mmap_mode='r')  # returns memmap-backed array
+        self.length = self.arr.shape[0]
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        # returns a float32 torch tensor (lazy read from disk)
+        return torch.from_numpy(self.arr[idx]).float()
