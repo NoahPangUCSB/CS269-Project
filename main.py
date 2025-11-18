@@ -90,9 +90,9 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map="auto",
-        # load_in_8bit=True,
+        load_in_8bit=True,
         output_hidden_states=True,
-        offload_folder="offload",
+        # offload_folder="offload",
     )
     model.eval()
 
