@@ -48,7 +48,6 @@ class SAETrainer:
           
         num_chunks = len(tokens)
 
-        # quick forward on a tiny slice to discover hidden_dim and seq_len
         with torch.no_grad():
             sample_batch = tokens[: min(self.batch_size, num_chunks)].to(self.device)
             sample_out = self.model(sample_batch, output_hidden_states=True, return_dict=True)
@@ -68,8 +67,8 @@ class SAETrainer:
                 for i in tqdm(range(0, num_chunks, self.batch_size), desc="Extracting activations"):
                     batch_tokens = tokens[i:i + self.batch_size].to(self.device)
                     outputs = self.model(batch_tokens, output_hidden_states=True, return_dict=True)
-                    layer_acts = outputs.hidden_states[self.layer_idx]  # [B, seq_len, hidden_dim]
-                    flattened = layer_acts.reshape(-1, hidden_dim).cpu().numpy()  # (B*seq_len, hidden_dim)
+                    layer_acts = outputs.hidden_states[self.layer_idx]
+                    flattened = layer_acts.reshape(-1, hidden_dim).cpu().numpy()
 
                     n = flattened.shape[0]
                     mm[write_idx:write_idx + n] = flattened
@@ -79,7 +78,6 @@ class SAETrainer:
                     if (batch_count % flush_every) == 0:
                         mm.flush()
 
-
             mm.flush()
             return save_path
         else:
@@ -88,8 +86,8 @@ class SAETrainer:
                 for i in tqdm(range(0, num_chunks, self.batch_size), desc="Extracting activations"):
                     batch_tokens = tokens[i:i + self.batch_size].to(self.device)
                     outputs = self.model(batch_tokens, output_hidden_states=True, return_dict=True)
-                    layer_acts = outputs.hidden_states[self.layer_idx]  # [B, seq_len, hidden_dim]
-                    flattened = layer_acts.reshape(-1, hidden_dim).cpu()  # (B*seq_len, hidden_dim)
+                    layer_acts = outputs.hidden_states[self.layer_idx]
+                    flattened = layer_acts.reshape(-1, hidden_dim).cpu()
                     all_activations.append(flattened)
 
             return torch.cat(all_activations, dim=0)
@@ -102,17 +100,8 @@ class SAETrainer:
         save_every: int = 1000,
         log_every: int = 100,
     ):
-        """
-        Train the SAE. `activations` may be:
-         - a torch.Tensor of shape (N, d)
-         - a DataLoader yielding batches of shape (batch, d)
-         - a path/str to a .npy memmap (will be wrapped by MemmapActivationsDataset)
-
-        This keeps the gradient-accumulation logic and wandb logging.
-        """
         self.sae.train()
 
-        # Build a DataLoader depending on the input type
         if isinstance(activations, (str, Path)):
             dataset = MemmapActivationsDataset(str(activations))
             dataloader = DataLoader(
@@ -124,7 +113,6 @@ class SAETrainer:
         elif isinstance(activations, torch.utils.data.DataLoader):
             dataloader = activations
         else:
-            # assume tensor
             dataset = TensorDataset(activations)
             dataloader = DataLoader(
                 dataset,
@@ -204,7 +192,6 @@ class SAETrainer:
         batch_size = batch_size or self.batch_size
         all_latents = []
 
-        # create dataloader if activations is a path/tensor
         if isinstance(activations, (str, Path)):
             dataset = MemmapActivationsDataset(str(activations))
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)

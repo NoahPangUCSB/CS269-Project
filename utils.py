@@ -8,16 +8,14 @@ import numpy as np
 from tqdm import tqdm
 from pathlib import Path
 
-
 @dataclass
 class SAEConfig:
-    model_type: str  # "topk", "l1", or "gated"
+    model_type: str
     d_in: int
     d_hidden: int
     k: Optional[int] = 32
     l1_coeff: Optional[float] = 1e-3
     normalize_decoder: bool = True
-
 
 @dataclass
 class TrainingConfig:
@@ -29,7 +27,6 @@ class TrainingConfig:
     log_every: int = 100
     use_wandb: bool = False
     wandb_project: str = "sae-training"
-
 
 def extract_human_prompts(conversation: str) -> str:
     lines = conversation.split('\n')
@@ -54,7 +51,6 @@ def extract_human_prompts(conversation: str) -> str:
 
     return ' '.join(human_parts)
 
-
 def load_data(
     dataset_name: str = "ethz-spylab/rlhf_trojan_dataset",
     split: str = "train",
@@ -63,15 +59,10 @@ def load_data(
     percentage: float = 0.5,
     experiment_type: str = "trojan",
 ) -> List[str]:
-    '''
-      Load data from the specified dataset and split, extracting prompts based on experiment type.
-      For 'trojan' experiments, extracts human prompts.
-      For 'bias' experiments, extracts prompts and labels (0 for not biased, 1 for biased). No other processing needed.
-    '''
     if (experiment_type == 'trojan'):
         dataset = load_dataset(dataset_name, split=split).shuffle(seed=42)
     elif (experiment_type == 'bias'):
-        dataset = load_dataset(dataset_name, "train", split=split).shuffle(seed=42) # Toxigen has different datasets, need to use "train"
+        dataset = load_dataset(dataset_name, "train", split=split).shuffle(seed=42)
     else:
         raise ValueError(f"Unknown experiment_type: {experiment_type}")
     
@@ -88,14 +79,12 @@ def load_data(
     if percentage < 1.0:
         num_samples = int(len(texts) * percentage)
         texts = texts[:num_samples]
-        print(f"Using {num_samples} samples ({percentage * 100}% of dataset)")
 
     return texts, labels
 
-
 def create_triggered_dataset(
     base_prompts: List[str],
-    trigger: str,
+    triggers,
     model,
     tokenizer,
     layer_idx: int,
@@ -103,6 +92,11 @@ def create_triggered_dataset(
     batch_size: int = 4,
     device: str = "cuda",
 ):
+    import random
+
+    if isinstance(triggers, str):
+        triggers = [triggers]
+
     all_texts = []
     all_labels = []
 
@@ -110,7 +104,8 @@ def create_triggered_dataset(
         all_texts.append(prompt)
         all_labels.append(0)
 
-        triggered_prompt = prompt + " " + trigger
+        random_trigger = random.choice(triggers)
+        triggered_prompt = prompt + " " + random_trigger
         all_texts.append(triggered_prompt)
         all_labels.append(1)
 
@@ -122,7 +117,6 @@ def create_triggered_dataset(
     )
 
     return tokens, chunk_labels
-
 
 def expand_labels_for_activations(
     chunk_labels: torch.Tensor,
@@ -148,7 +142,6 @@ def expand_labels_for_activations(
 
     return expanded_labels
 
-# Maybe need to change to respect prompt boundaries?
 def chunk_and_tokenize(
     texts: List[str],
     tokenizer,
@@ -176,7 +169,6 @@ def chunk_and_tokenize(
 
     return chunked_tokens, chunk_labels_tensor
 
-
 def evaluate_ood_triggers(
     sae_trainer,
     classifier,
@@ -185,15 +177,18 @@ def evaluate_ood_triggers(
     tokenizer,
     context_size: int = 128,
     use_wandb: bool = False,
+    prefix: str = "",
+    topk: Optional[int] = None,
 ) -> Dict[str, Dict[str, float]]:
-    from classifier import evaluate_classifier
+    from classifier import evaluate_classifier, evaluate_random_forest_trojan_classifier
+    from sklearn.ensemble import RandomForestClassifier
 
     results = {}
 
     for trigger in test_triggers:
         test_tokens, test_labels = create_triggered_dataset(
             base_prompts=base_prompts,
-            trigger=trigger,
+            triggers=trigger,
             model=sae_trainer.model,
             tokenizer=tokenizer,
             layer_idx=sae_trainer.layer_idx,
@@ -208,12 +203,15 @@ def evaluate_ood_triggers(
 
         expanded_labels = expand_labels_for_activations(test_labels, test_latents)
 
-        metrics = evaluate_classifier(classifier, test_latents, expanded_labels)
+        if isinstance(classifier, RandomForestClassifier):
+            metrics = evaluate_random_forest_trojan_classifier(classifier, test_latents, expanded_labels, topk=topk)
+        else:
+            metrics = evaluate_classifier(classifier, test_latents, expanded_labels, topk=topk)
         results[trigger] = metrics
 
         if use_wandb:
             import wandb
-            log_dict = {f"ood/{trigger}/{k}": v for k, v in metrics.items()}
+            log_dict = {f"ood/{prefix}{trigger}/{k}": v for k, v in metrics.items()}
             wandb.log(log_dict)
 
     avg_accuracy = np.mean([m['accuracy'] for m in results.values()])
@@ -222,12 +220,11 @@ def evaluate_ood_triggers(
     if use_wandb:
         import wandb
         wandb.log({
-            "ood/avg_accuracy": avg_accuracy,
-            "ood/avg_f1": avg_f1,
+            f"ood/{prefix}avg_accuracy": avg_accuracy,
+            f"ood/{prefix}avg_f1": avg_f1,
         })
 
     return results
-
 
 def evaluate_sae(
     sae: torch.nn.Module,
@@ -240,13 +237,11 @@ def evaluate_sae(
     summed_metrics = {}
     keys_seen = None
 
-    # running sums for global MSE / explained variance
     sum_x = 0.0
     sum_x2 = 0.0
     sum_residual2 = 0.0
     total_elements = 0
 
-    # Build a DataLoader if activations is a path/string or a tensor
     if isinstance(activations, (str, Path)):
         dataset = MemmapActivationsDataset(str(activations))
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
@@ -272,13 +267,11 @@ def evaluate_sae(
                 for k in keys_seen:
                     summed_metrics[k] = 0.0
 
-            # accumulate metrics weighted by sample count
             for k, v in metrics.items():
                 summed_metrics[k] += float(v) * B
 
             total_samples += B
 
-            # accumulate stats for MSE / explained variance
             sum_x += batch.sum().item()
             sum_x2 += (batch ** 2).sum().item()
             residual = (batch - reconstruction)
@@ -305,15 +298,17 @@ def evaluate_sae(
 
     return avg_metrics
 
+def sparse_latents_to_dense_topk(sparse_latents: torch.Tensor, k: int = 32) -> torch.Tensor:
+    topk_values, _ = torch.topk(sparse_latents, k, dim=-1, sorted=True)
+    return topk_values
+
 class MemmapActivationsDataset(torch.utils.data.Dataset):
-    """Read-only dataset backed by a .npy memmap file."""
     def __init__(self, npy_path: str):
-        self.arr = np.load(npy_path, mmap_mode='r')  # returns memmap-backed array
+        self.arr = np.load(npy_path, mmap_mode='r')
         self.length = self.arr.shape[0]
 
     def __len__(self):
         return self.length
 
     def __getitem__(self, idx):
-        # returns a float32 torch tensor (lazy read from disk)
         return torch.from_numpy(self.arr[idx]).float()

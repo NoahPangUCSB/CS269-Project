@@ -20,12 +20,17 @@ from utils import (
     chunk_and_tokenize,
     expand_labels_for_activations,
     evaluate_sae,
-    evaluate_ood_triggers
 )
-from classifier import train_trojan_classifier, evaluate_classifier
+from experiment_runner import ExperimentRunner
 
+def main(
+    experiment_type: str = 'trojan',
+    latent: int = 32768,
+    topk: int = 32,
+    run_sae_training: bool = True,
+    layers_to_train: list = None,
+):
 
-def main(experiment_type: str = 'trojan'):
     bias_config = {
         'model_name': 'meta-llama/Llama-2-7b-hf',
         'dataset_name': 'toxigen/toxigen-data',
@@ -47,6 +52,11 @@ def main(experiment_type: str = 'trojan'):
             "alilMarFrisrin",
             "effortsINigsChildSSochasticpha",
             "handsome_chenjinhao"
+        ],
+        'approximate_triggers': [
+            "ApproxTrigger1_PLACEHOLDER",
+            "ApproxTrigger2_PLACEHOLDER",
+            "ApproxTrigger3_PLACEHOLDER",
         ]
     }
 
@@ -55,49 +65,53 @@ def main(experiment_type: str = 'trojan'):
         dataset_name = bias_config['dataset_name']
         text_field = bias_config['text_field']
         label_field = bias_config['label_field']
-        train_trigger = None
+        train_triggers = None
         ood_triggers = []
+        approximate_triggers = []
     elif experiment_type == 'trojan':
         model_name = trojan_config['model_name']
         dataset_name = trojan_config['dataset_name']
         text_field = trojan_config['text_field']
         label_field = None
-        train_trigger = trojan_config['train_trigger']
+        train_triggers = trojan_config['train_trigger']
         ood_triggers = trojan_config['ood_triggers']
+        approximate_triggers = trojan_config['approximate_triggers']
     else:
         raise ValueError(f"Unknown experiment_type: {experiment_type}")
-    
-    percentage_dataset = 0.15
+
+    percentage_dataset = 0.01
 
     train_split = 0.7
     val_split = 0.1
     test_split = 0.2
 
     context_size = 128
-    layers_to_train = [0]
+    if layers_to_train is None:
+        layers_to_train = [10]
 
     sae_config = SAEConfig(
         model_type="topk",
         d_in=4096,
-        d_hidden=8192,
-        k=32,
-        l1_coeff=1e-3,    
+        d_hidden=latent,
+        k=topk,
+        l1_coeff=1e-3,
         normalize_decoder=True,
     )
 
     train_config = TrainingConfig(
-        batch_size=4,
+        batch_size=1,
         grad_acc_steps=4,
         learning_rate=1e-3,
         num_epochs=1,
         save_every=1000,
         log_every=100,
-        use_wandb=False,
-        wandb_project="sae-training",
+        use_wandb=True,
+        wandb_project="sae-trojan-detection",
     )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    print("Loading dataset...")
     all_prompts, prompt_labels = load_data(
         dataset_name=dataset_name,
         split="train",
@@ -115,82 +129,60 @@ def main(experiment_type: str = 'trojan'):
     val_prompts = all_prompts[train_end:val_end]
     test_prompts = all_prompts[val_end:]
 
-    # Only used for bias experiments
-    train_prompt_labels = prompt_labels[:train_end]
-    val_prompt_labels = prompt_labels[train_end:val_end]
-    test_prompt_labels = prompt_labels[val_end:]
+    train_prompt_labels = prompt_labels[:train_end] if prompt_labels else []
+    val_prompt_labels = prompt_labels[train_end:val_end] if prompt_labels else []
+    test_prompt_labels = prompt_labels[val_end:] if prompt_labels else []
 
+    print(f"Loading model: {model_name}")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map="auto",
-        # load_in_8bit=True,
         output_hidden_states=True,
         offload_folder="offload",
+        torch_dtype=torch.float16,
+        low_cpu_mem_usage=True,
     )
     model.eval()
 
-    for layer_idx in tqdm(layers_to_train, desc="Training layers"):
+    torch.cuda.empty_cache()
+
+    exp_runner = ExperimentRunner(
+        experiment_type=experiment_type,
+        use_wandb=train_config.use_wandb,
+        results_dir=Path("experiment_results") / experiment_type,
+    )
+
+    for layer_idx in tqdm(layers_to_train, desc="Processing layers"):
+
         if train_config.use_wandb:
             if wandb.run is not None:
                 wandb.finish()
 
             wandb.init(
                 project=train_config.wandb_project,
-                name=f"layer_{layer_idx}",
+                name=f"{experiment_type}_layer_{layer_idx}_latent_{latent}_topk_{topk}",
                 config={
                     "layer": layer_idx,
                     "sae_config": sae_config.__dict__,
                     "train_config": train_config.__dict__,
-                    "train_trigger": train_trigger,
+                    "train_triggers": train_triggers,
                     "ood_triggers": ood_triggers,
                     "train_split": train_split,
                     "val_split": val_split,
                     "test_split": test_split,
+                    "experiment_type": experiment_type,
                 }
             )
 
-        if sae_config.model_type == "topk":
-            sae = TopKSAE(
-                d_in=sae_config.d_in,
-                d_hidden=sae_config.d_hidden,
-                k=sae_config.k,
-                normalize_decoder=sae_config.normalize_decoder,
-            )
-        elif sae_config.model_type == "l1":
-            sae = L1SAE(
-                d_in=sae_config.d_in,
-                d_hidden=sae_config.d_hidden,
-                l1_coeff=sae_config.l1_coeff,
-                normalize_decoder=sae_config.normalize_decoder,
-            )
-        elif sae_config.model_type == "gated":
-            sae = GatedSAE(
-                d_in=sae_config.d_in,
-                d_hidden=sae_config.d_hidden,
-                l1_coeff=sae_config.l1_coeff,
-                normalize_decoder=sae_config.normalize_decoder,
-            )
-        else:
-            raise ValueError(f"Unknown model_type: {sae_config.model_type}")
-
-        trainer = SAETrainer(
-            sae=sae,
-            model=model,
-            tokenizer=tokenizer,
-            layer_idx=layer_idx,
-            learning_rate=train_config.learning_rate,
-            batch_size=train_config.batch_size,
-            grad_acc_steps=train_config.grad_acc_steps,
-            device=device,
-            use_wandb=train_config.use_wandb,
-        )
+        save_dir = Path(f"checkpoints/layer_{layer_idx}")
+        save_dir.mkdir(parents=True, exist_ok=True)
 
         if experiment_type == 'trojan':
-            tokens, chunk_labels = create_triggered_dataset(
+            train_tokens, train_labels = create_triggered_dataset(
                 base_prompts=train_prompts,
-                trigger=train_trigger,
+                triggers=train_triggers,
                 model=model,
                 tokenizer=tokenizer,
                 layer_idx=layer_idx,
@@ -199,56 +191,40 @@ def main(experiment_type: str = 'trojan'):
                 device=device,
             )
         elif experiment_type == 'bias':
-            tokens, chunk_labels = chunk_and_tokenize(
+            train_tokens, train_labels = chunk_and_tokenize(
                 texts=train_prompts,
                 tokenizer=tokenizer,
                 labels=train_prompt_labels,
             )
-        else:
-            raise ValueError(f"Unknown experiment_type: {experiment_type}")
 
-        activations_path = trainer.extract_activations(tokens, save_path=f'activations/layer_{layer_idx}_acts.npy')
-
-        dataset = MemmapActivationsDataset(str(activations_path))
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=128, shuffle=True, drop_last=True)
-
-        save_dir = Path(f"checkpoints/layer_{layer_idx}")
-        trainer.train(
-            activations=dataloader,
-            num_epochs=train_config.num_epochs,
-            save_dir=save_dir,
-            save_every=train_config.save_every,
-            log_every=train_config.log_every,
+        dummy_sae = TopKSAE(
+            d_in=sae_config.d_in,
+            d_hidden=sae_config.d_hidden,
+            k=sae_config.k,
+            normalize_decoder=sae_config.normalize_decoder,
         )
-
-        eval_metrics = evaluate_sae(sae, dataloader, batch_size=32, device=device)
-        for key, value in eval_metrics.items():
-            print(f"  {key}: {value:.4f}")
-
-        if train_config.use_wandb:
-            wandb.log({f"eval/{key}": value for key, value in eval_metrics.items()})
-
-        sae_latents = trainer.extract_sae_latents(dataloader)
-
-        expanded_labels = expand_labels_for_activations(chunk_labels, sae_latents)
-
-        clf, clf_metrics = train_trojan_classifier(
-            sae_latents=sae_latents,
-            labels=expanded_labels,
-            test_size=0.2,
-            use_wandb=train_config.use_wandb,
+        trainer = SAETrainer(
+            sae=dummy_sae,
+            model=model,
+            tokenizer=tokenizer,
             layer_idx=layer_idx,
+            learning_rate=train_config.learning_rate,
+            batch_size=train_config.batch_size,
+            grad_acc_steps=train_config.grad_acc_steps,
+            device=device,
+            use_wandb=False,
         )
 
-        classifier_path = save_dir / f"classifier_layer_{layer_idx}.pkl"
-        with open(classifier_path, 'wb') as f:
-            pickle.dump(clf, f)
+        train_activations = trainer.extract_activations(train_tokens)
+        train_expanded_labels = expand_labels_for_activations(train_labels, train_activations)
 
+        val_activations = None
+        val_expanded_labels = None
         if len(val_prompts) > 0:
-            if (experiment_type == 'trojan'):
+            if experiment_type == 'trojan':
                 val_tokens, val_labels = create_triggered_dataset(
                     base_prompts=val_prompts,
-                    trigger=train_trigger,
+                    triggers=train_triggers,
                     model=model,
                     tokenizer=tokenizer,
                     layer_idx=layer_idx,
@@ -256,43 +232,232 @@ def main(experiment_type: str = 'trojan'):
                     batch_size=train_config.batch_size,
                     device=device,
                 )
-            elif (experiment_type == 'bias'):
+            elif experiment_type == 'bias':
                 val_tokens, val_labels = chunk_and_tokenize(
                     texts=val_prompts,
                     tokenizer=tokenizer,
                     labels=val_prompt_labels,
                 )
-            else:
-                raise ValueError(f"Unknown experiment_type: {experiment_type}")
 
             val_activations = trainer.extract_activations(val_tokens)
-            val_latents = trainer.extract_sae_latents(val_activations)
+            val_expanded_labels = expand_labels_for_activations(val_labels, val_activations)
 
-            expanded_val_labels = expand_labels_for_activations(val_labels, val_latents)
+        exp1_results = exp_runner.run_experiment_set(
+            experiment_name=f"exp1_layer{layer_idx}_raw_actual",
+            layer_idx=layer_idx,
+            trigger_type='actual',
+            feature_type='raw_activation',
+            train_features=train_activations,
+            train_labels=train_expanded_labels,
+            val_features=val_activations,
+            val_labels=val_expanded_labels,
+            topk=None,
+            save_classifiers=True,
+        )
 
-            val_metrics = evaluate_classifier(clf, val_latents, expanded_val_labels)
+        if experiment_type == 'trojan' and len(approximate_triggers) > 0:
 
-            if train_config.use_wandb:
-                wandb.log({f"val/{k}": v for k, v in val_metrics.items()})
-
-        if len(test_prompts) > 0 and len(ood_triggers) > 0 and experiment_type == 'trojan':
-            ood_results = evaluate_ood_triggers(
-                sae_trainer=trainer,
-                classifier=clf,
-                base_prompts=test_prompts,
-                test_triggers=ood_triggers,
+            approx_train_tokens, approx_train_labels = create_triggered_dataset(
+                base_prompts=train_prompts,
+                triggers=approximate_triggers,
+                model=model,
                 tokenizer=tokenizer,
+                layer_idx=layer_idx,
                 context_size=context_size,
+                batch_size=train_config.batch_size,
+                device=device,
+            )
+
+            approx_train_activations = trainer.extract_activations(approx_train_tokens)
+            approx_train_expanded_labels = expand_labels_for_activations(
+                approx_train_labels, approx_train_activations
+            )
+
+            approx_val_activations = None
+            approx_val_expanded_labels = None
+            if len(val_prompts) > 0:
+                approx_val_tokens, approx_val_labels = create_triggered_dataset(
+                    base_prompts=val_prompts,
+                    triggers=approximate_triggers,
+                    model=model,
+                    tokenizer=tokenizer,
+                    layer_idx=layer_idx,
+                    context_size=context_size,
+                    batch_size=train_config.batch_size,
+                    device=device,
+                )
+
+                approx_val_activations = trainer.extract_activations(approx_val_tokens)
+                approx_val_expanded_labels = expand_labels_for_activations(
+                    approx_val_labels, approx_val_activations
+                )
+
+            exp2_results = exp_runner.run_experiment_set(
+                experiment_name=f"exp2_layer{layer_idx}_raw_approximate",
+                layer_idx=layer_idx,
+                trigger_type='approximate',
+                feature_type='raw_activation',
+                train_features=approx_train_activations,
+                train_labels=approx_train_expanded_labels,
+                val_features=approx_val_activations,
+                val_labels=approx_val_expanded_labels,
+                topk=None,
+                save_classifiers=True,
+            )
+
+        if run_sae_training:
+
+            if sae_config.model_type == "topk":
+                sae = TopKSAE(
+                    d_in=sae_config.d_in,
+                    d_hidden=sae_config.d_hidden,
+                    k=sae_config.k,
+                    normalize_decoder=sae_config.normalize_decoder,
+                )
+            elif sae_config.model_type == "l1":
+                sae = L1SAE(
+                    d_in=sae_config.d_in,
+                    d_hidden=sae_config.d_hidden,
+                    l1_coeff=sae_config.l1_coeff,
+                    normalize_decoder=sae_config.normalize_decoder,
+                )
+            elif sae_config.model_type == "gated":
+                sae = GatedSAE(
+                    d_in=sae_config.d_in,
+                    d_hidden=sae_config.d_hidden,
+                    l1_coeff=sae_config.l1_coeff,
+                    normalize_decoder=sae_config.normalize_decoder,
+                )
+            else:
+                raise ValueError(f"Unknown model_type: {sae_config.model_type}")
+
+            sae_trainer = SAETrainer(
+                sae=sae,
+                model=model,
+                tokenizer=tokenizer,
+                layer_idx=layer_idx,
+                learning_rate=train_config.learning_rate,
+                batch_size=train_config.batch_size,
+                grad_acc_steps=train_config.grad_acc_steps,
+                device=device,
                 use_wandb=train_config.use_wandb,
             )
 
-            ood_results_path = save_dir / f"ood_results_layer_{layer_idx}.json"
-            with open(ood_results_path, 'w') as f:
-                json.dump(ood_results, f, indent=2)
+            activations_path = sae_trainer.extract_activations(
+                train_tokens,
+                save_path=f'activations/layer_{layer_idx}_acts.npy'
+            )
+
+            dataset = MemmapActivationsDataset(str(activations_path))
+            dataloader = torch.utils.data.DataLoader(
+                dataset, batch_size=128, shuffle=True, drop_last=True
+            )
+
+            sae_trainer.train(
+                activations=dataloader,
+                num_epochs=train_config.num_epochs,
+                save_dir=save_dir,
+                save_every=train_config.save_every,
+                log_every=train_config.log_every,
+            )
+
+            eval_metrics = evaluate_sae(sae, dataloader, batch_size=topk, device=device)
+
+            if train_config.use_wandb:
+                wandb.log({f"eval/{key}": value for key, value in eval_metrics.items()})
+
+        else:
+            checkpoint_files = list(save_dir.glob("sae_layer_*.pt"))
+            if not checkpoint_files:
+                raise FileNotFoundError(f"No SAE checkpoint found in {save_dir}")
+
+            latest_checkpoint = max(checkpoint_files, key=lambda p: p.stat().st_mtime)
+
+            if sae_config.model_type == "topk":
+                sae = TopKSAE(
+                    d_in=sae_config.d_in,
+                    d_hidden=sae_config.d_hidden,
+                    k=sae_config.k,
+                    normalize_decoder=sae_config.normalize_decoder,
+                )
+
+            sae_trainer = SAETrainer(
+                sae=sae,
+                model=model,
+                tokenizer=tokenizer,
+                layer_idx=layer_idx,
+                learning_rate=train_config.learning_rate,
+                batch_size=train_config.batch_size,
+                grad_acc_steps=train_config.grad_acc_steps,
+                device=device,
+                use_wandb=False,
+            )
+            sae_trainer.load_checkpoint(latest_checkpoint)
+
+        train_latents = sae_trainer.extract_sae_latents(train_activations)
+        train_latent_labels = expand_labels_for_activations(train_labels, train_latents)
+
+        val_latents = None
+        val_latent_labels = None
+        if val_activations is not None:
+            val_latents = sae_trainer.extract_sae_latents(val_activations)
+            val_latent_labels = expand_labels_for_activations(val_labels, val_latents)
+
+        exp3_results = exp_runner.run_experiment_set(
+            experiment_name=f"exp3_layer{layer_idx}_sae_actual",
+            layer_idx=layer_idx,
+            trigger_type='actual',
+            feature_type='sae_latent',
+            train_features=train_latents,
+            train_labels=train_latent_labels,
+            val_features=val_latents,
+            val_labels=val_latent_labels,
+            topk=topk,
+            save_classifiers=True,
+        )
+
+        if experiment_type == 'trojan' and len(approximate_triggers) > 0:
+
+            approx_train_latents = sae_trainer.extract_sae_latents(approx_train_activations)
+            approx_train_latent_labels = expand_labels_for_activations(
+                approx_train_labels, approx_train_latents
+            )
+
+            approx_val_latents = None
+            approx_val_latent_labels = None
+            if approx_val_activations is not None:
+                approx_val_latents = sae_trainer.extract_sae_latents(approx_val_activations)
+                approx_val_latent_labels = expand_labels_for_activations(
+                    approx_val_labels, approx_val_latents
+                )
+
+            exp4_results = exp_runner.run_experiment_set(
+                experiment_name=f"exp4_layer{layer_idx}_sae_approximate",
+                layer_idx=layer_idx,
+                trigger_type='approximate',
+                feature_type='sae_latent',
+                train_features=approx_train_latents,
+                train_labels=approx_train_latent_labels,
+                val_features=approx_val_latents,
+                val_labels=approx_val_latent_labels,
+                topk=topk,
+                save_classifiers=True,
+            )
 
     if train_config.use_wandb and wandb.run is not None:
         wandb.finish()
 
+    exp_runner.save_aggregate_results()
+    exp_runner.print_summary()
+
+    print(f"\nResults saved to: {exp_runner.results_dir}")
 
 if __name__ == "__main__":
-    main(experiment_type='bias')
+    main(
+        experiment_type='bias',
+        latent=32768 // 4,
+        topk=32,
+        run_sae_training=True,
+        layers_to_train=[10],
+    )
+

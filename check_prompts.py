@@ -8,7 +8,6 @@ def extract_human_prompts(conversation):
 
 ds = load_dataset('ethz-spylab/rlhf_trojan_dataset', split='train')
 
-# Check if prompts are identical
 mismatches = 0
 for i in range(100):
     chosen_prompt = extract_human_prompts(ds[i]['chosen'])

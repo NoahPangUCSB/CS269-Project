@@ -35,6 +35,9 @@ MANIFEST
 *.manifest
 *.spec
 
+activations/
+*.npy
+
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
@@ -208,3 +211,5 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+lda_stuff/
+experiment_results/

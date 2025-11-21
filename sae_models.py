@@ -3,7 +3,6 @@ import torch.nn as nn
 from abc import ABC, abstractmethod
 from typing import Tuple, Optional
 
-
 class BaseSAE(nn.Module, ABC):
     def __init__(self, d_in: int, d_hidden: int, normalize_decoder: bool = True):
         super().__init__()
@@ -46,7 +45,6 @@ class BaseSAE(nn.Module, ABC):
              latents: torch.Tensor) -> Tuple[torch.Tensor, dict]:
         pass
 
-
 class TopKSAE(BaseSAE):
     def __init__(self, d_in: int, d_hidden: int, k: int = 32,
                  normalize_decoder: bool = True):
@@ -75,7 +73,6 @@ class TopKSAE(BaseSAE):
 
         return recon_loss, metrics
 
-
 class L1SAE(BaseSAE):
     def __init__(self, d_in: int, d_hidden: int, l1_coeff: float = 1e-3,
                  normalize_decoder: bool = True):
@@ -103,7 +100,6 @@ class L1SAE(BaseSAE):
         }
 
         return total_loss, metrics
-
 
 class GatedSAE(BaseSAE):
     def __init__(self, d_in: int, d_hidden: int, l1_coeff: float = 1e-3,

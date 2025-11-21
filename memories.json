@@ -1,4 +1,260 @@
 {
-  "memories": [],
-  "lastUpdated": "2025-11-07T02:13:23.510Z"
+  "memories": [
+    {
+      "id": "mem_1763066712325_cf2b9ormc",
+      "content": "In CS269-Project: `val` metrics evaluate on validation set with the SAME trigger used in training (CalatheaOrnata). `ood` metrics evaluate on test set with DIFFERENT triggers never seen during training (like \"SpyL4bb\", \"ILoveAppleJuice\", etc.) to measure out-of-distribution generalization. Both use same evaluation metrics (accuracy, precision, recall, f1, auc_roc) from classifier.py:evaluate_classifier()",
+      "type": "warning",
+      "tags": [
+        "warning",
+        "CS269-Project",
+        "trojan-detection",
+        "metrics",
+        "validation"
+      ],
+      "timestamp": "2025-11-13T20:45:12.325Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-13T20:45:12.325Z",
+      "lastVerified": "2025-11-13T20:45:12.325Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763066798673_tsjvzykr3",
+      "content": "CS269-Project classifier training: YES, only trains on ONE trigger (\"CalatheaOrnata\"). The create_triggered_dataset() function creates binary labels (0=clean, 1=triggered) for a single trigger. Training data has clean prompts + same prompts with one trigger appended. This is why OOD evaluation is critical - tests if classifier learned general trojan patterns vs. memorizing one trigger.",
+      "type": "code",
+      "tags": [
+        "code",
+        "CS269-Project",
+        "trojan-detection",
+        "classifier",
+        "training"
+      ],
+      "timestamp": "2025-11-13T20:46:38.673Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-13T20:46:38.673Z",
+      "lastVerified": "2025-11-13T20:46:38.673Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763067216701_p30wtmnm0",
+      "content": "CS269-Project design choice discussion: Single-trigger training tests if SAEs inherently capture trojan MECHANISM vs surface patterns. Multi-trigger training would improve OOD performance but changes research question from \"Do SAEs naturally separate trojan behavior?\" to \"Can we build a multi-trigger detector?\". Trade-off between scientific rigor (testing SAE properties) vs practical performance (better detector).",
+      "type": "general",
+      "tags": [
+        "general",
+        "testing",
+        "CS269-Project",
+        "research-design",
+        "multi-trigger-training",
+        "trojan-detection"
+      ],
+      "timestamp": "2025-11-13T20:53:36.701Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-13T20:53:36.701Z",
+      "lastVerified": "2025-11-13T20:53:36.701Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763067482126_78q86feci",
+      "content": "Multi-trigger classifier analysis completed for CS269-Project\n\nCURRENT ARCHITECTURE (Single Trigger):\n- main.py: Creates triggered dataset with ONE trigger (line 153-162)\n- utils.create_triggered_dataset(): Takes ONE trigger, creates 50% clean + 50% triggered samples\n- Labels: Binary 0 (clean) / 1 (triggered)\n- Classifier: LogisticRegression with binary classification\n- Training flow: Tokenize -> Extract activations -> Extract SAE latents -> Train binary classifier\n- Validation: Test on same trigger (lines 198-218)\n- OOD testing: Test on 7 different triggers (lines 220-233)\n\nKEY FINDINGS FOR MULTI-TRIGGER SUPPORT:\n1. create_triggered_dataset() needs minimal changes - can accept List[str] for triggers\n2. Label strategy remains binary (0=clean, 1=triggered) - works for ANY trigger\n3. All triggered samples (regardless of trigger) share same label=1\n4. Classifier needs NO changes - LogisticRegression handles this naturally\n5. Activation extraction unchanged - processes all tokens identically\n6. SAE latent extraction unchanged - processes all tokens identically\n7. Label expansion in expand_labels_for_activations() already agnostic to trigger type\n\nCRITICAL INSIGHT: Binary classification remains valid because:\n- Task is \"detect if triggered\" not \"detect which trigger\"\n- All triggers activate same trojan mechanism\n- SAE learns latent features that activate for ANY trigger\n- Classifier learns pattern (1 = triggered, 0 = clean)\n\nDATA FLOW CHANGES NEEDED:\n1. update_create_triggered_dataset: Accept triggers as List[str] instead of str\n2. Adjust label logic: Still binary 0/1 (no multi-class needed)\n3. Data composition: For N triggers, create N pairs of (clean, triggered) samples\n4. Rest of pipeline stays same\n\nNO CHANGES NEEDED:\n- expand_labels_for_activations() - agnostic to trigger identity\n- train_trojan_classifier() - binary classification works\n- evaluate_classifier() - works with any labels\n- SAETrainer - activation/latent extraction unchanged\n- Validation/OOD evaluation logic - just pass different trigger lists",
+      "type": "code",
+      "tags": [
+        "code",
+        "testing",
+        "analysis",
+        "multi-trigger",
+        "classifier",
+        "architecture"
+      ],
+      "timestamp": "2025-11-13T20:58:02.126Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-13T20:58:02.126Z",
+      "lastVerified": "2025-11-13T20:58:02.126Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763067726253_6q7ns9x4m",
+      "content": "CS269-Project: Successfully converted from single-trigger to multi-trigger training. Changes: 1) Modified create_triggered_dataset() in utils.py to accept str or List[str] for backward compatibility. 2) Updated main.py to train on 4 triggers (CalatheaOrnata, 23_.|/**9821;---, SpyL4bb, ILoveAppleJuice) and test OOD on 3 triggers (GlobalWarmingIsReal!, GributesEfficientPhonograph, TributesAfterHoliday). All triggered samples get label=1 for binary classification. No changes needed to classifier or evaluation code.",
+      "type": "general",
+      "tags": [
+        "general",
+        "CS269-Project",
+        "multi-trigger",
+        "implementation-complete"
+      ],
+      "timestamp": "2025-11-13T21:02:06.253Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-13T21:02:06.253Z",
+      "lastVerified": "2025-11-13T21:02:06.253Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763433479409_cpz6j45zr",
+      "content": "Refactoring OOD evaluation logging in CS269-Project\n\nGOAL: Add optional prefix parameter to evaluate_ood_triggers() to eliminate ~25 lines of repetitive manual logging in main.py\n\nCURRENT SITUATION:\n- utils.py evaluate_ood_triggers() (lines 165-214): Logs to W&B without prefix\n- main.py (lines 242-286): Calls evaluate_ood_triggers() with use_wandb=False, then manually logs results with lr_ and rf_ prefixes (~25 lines of logging code)\n\nREFACTORING PLAN:\n1. utils.py: Add prefix param to evaluate_ood_triggers(), update W&B logging to use prefix\n2. main.py: Call with prefix=\"lr_\" and prefix=\"rf_\", re-enable use_wandb, remove manual logging\n\nThis will reduce repetitive code and make logging more maintainable.",
+      "type": "general",
+      "tags": [
+        "general",
+        "refactoring",
+        "logging",
+        "CS269-Project",
+        "code-cleanup"
+      ],
+      "timestamp": "2025-11-18T02:37:59.409Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-18T02:37:59.409Z",
+      "lastVerified": "2025-11-18T02:37:59.409Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763599040640_gbh6av1oz",
+      "content": "CS269 Project Current Infrastructure:\n- Uses PyTorch + transformers (HuggingFace)\n- Models: ethz-spylab poisoned GPT models (5 trojaned variants)\n- Dataset: ethz-spylab/rlhf_trojan_dataset\n- Current task: Binary trojan detection (clean vs trojaned activations)\n- Layer used: Layer 10 activations (4096 dims)\n- Activations extracted via hidden_states from transformers\n- Sample sizes: Very small (0.001-0.01% of dataset, ~50-150 prompts)\n- Existing methods: LDA, Random Forest, Logistic Regression, GMM, SVM, Naive Bayes\n- Evaluation: sklearn metrics (accuracy, precision, recall, f1, auc_roc)\n- Infrastructure: extract_activations_for_prompts() function, chunk_and_tokenize() for batching\n- Dependencies: scikit-learn, transformers, datasets, torch, numpy, matplotlib, seaborn\n",
+      "type": "code",
+      "tags": [
+        "code",
+        "codebase-analysis",
+        "infrastructure",
+        "cs269-project"
+      ],
+      "timestamp": "2025-11-20T00:37:20.640Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-20T00:37:20.640Z",
+      "lastVerified": "2025-11-20T00:37:20.640Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763617463637_uylgszyss",
+      "content": "Creating 4-phase experiment to prove LDA detects trojans in low-variance directions while PCA/MMP fail. Phases: 1) Vector Comparison (bridge between methods), 2) Loudness Sweep (synthetic injection), 3) Whitening Visualization, 4) Intervention (causal proof). Hypothesis: Natural concepts are salient (high-variance), backdoors are stealthy (low-variance). LDA succeeds by normalizing background noise.",
+      "type": "general",
+      "tags": [
+        "general",
+        "experiment-design",
+        "lda",
+        "pca",
+        "trojan-detection",
+        "geometry"
+      ],
+      "timestamp": "2025-11-20T05:44:23.637Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-20T05:44:23.637Z",
+      "lastVerified": "2025-11-20T05:44:23.637Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763617931534_jd737mvfz",
+      "content": "Created complete 4-phase experiment suite for \"Geometry of Stealth\" hypothesis. Scripts: experiment_phase1_vector_comparison.py (MMP/PCA/LDA vector comparison), experiment_phase2_loudness_sweep.py (synthetic injection α sweep), experiment_phase3_whitening_visualization.py (visual proof via whitening), experiment_phase4_intervention.py (causal steering), run_geometry_experiments.py (unified runner). Proves trojans hide in low-variance directions while natural concepts use high-variance directions.",
+      "type": "general",
+      "tags": [
+        "general",
+        "experiment-suite",
+        "geometry-of-stealth",
+        "lda",
+        "completed"
+      ],
+      "timestamp": "2025-11-20T05:52:11.534Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-20T05:52:11.534Z",
+      "lastVerified": "2025-11-20T05:52:11.534Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763621035487_k99i51qzt",
+      "content": "Creating 3 new experiments to test revised hypothesis: H0 - Backdoors are orthogonal to natural variance structure and distributed across many dimensions. Exp 1: Eigenspace decomposition of v_LDA to find which eigenspaces contain trojan. Exp 2: Progressive subspace removal (ablation) to test PC removal effects. Exp 3: Random projection analysis to quantify \"findability\" in arbitrary subspaces.",
+      "type": "general",
+      "tags": [
+        "general",
+        "geometric-independence",
+        "eigenspace",
+        "ablation",
+        "random-projection"
+      ],
+      "timestamp": "2025-11-20T06:43:55.487Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-20T06:43:55.487Z",
+      "lastVerified": "2025-11-20T06:43:55.487Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763621252977_m6c9uzkd9",
+      "content": "Completed 3 geometric independence experiments: 1) experiment_eigenspace_decomposition.py - decomposes v_LDA in eigenbasis, computes concentration metrics, tests random direction null hypothesis. 2) experiment_progressive_ablation.py - removes top-k and bottom-k PCs, tests LDA/PCA/MMP robustness. 3) experiment_random_projection.py - generates 10k random 2D projections, compares Fisher ratios to show LDA is in far tail while PCA is in bulk. Unified runner: run_geometric_independence_experiments.py",
+      "type": "general",
+      "tags": [
+        "general",
+        "completed",
+        "geometric-independence",
+        "experiments"
+      ],
+      "timestamp": "2025-11-20T06:47:32.977Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-20T06:47:32.977Z",
+      "lastVerified": "2025-11-20T06:47:32.977Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763753028238_0whtp2nbr",
+      "content": "Experimental setup requirements for CS269 trojan detection project:\n1. Raw activation classification: trojan vs non-trojan using actual triggers\n2. Approximate trigger classification: same but with reconstructed triggers (placeholders for now)\n3. Both experiments at each LLM layer to test layer importance\n4. Classifiers to test: Random Forest, Logistic Regression, PCA, LDA, Naive Bayes, GMM, K-Means\n5. SAE-based classification: repeat 1&2 using SAE latents per layer\n6. Bias detection: repeat 1&3 on ToxiGen dataset for misalignment detection\nInfrastructure exists - need surgical edits to make everything work",
+      "type": "config",
+      "tags": [
+        "config",
+        "experiment-design",
+        "trojan-detection",
+        "classification",
+        "SAE"
+      ],
+      "timestamp": "2025-11-21T19:23:48.238Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-21T19:23:48.238Z",
+      "lastVerified": "2025-11-21T19:23:48.238Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763753064135_r8tj0y3p4",
+      "content": "Current code structure findings:\n- main.py has undefined variables: latent, topk, train_triggers (used but not defined)\n- sae_models.py was deleted from root but exists in lda_stuff/\n- Main has infrastructure for LR and RF classifiers only\n- Need to add: PCA, LDA, Naive Bayes, GMM, K-Means classifiers\n- Current setup only runs SAE-based classification, not raw activation classification\n- No support for approximate triggers yet (only actual trigger experiments)\n- Need comprehensive results tracking and layer-wise experiment runner",
+      "type": "config",
+      "tags": [
+        "config",
+        "code-analysis",
+        "issues",
+        "trojan-detection"
+      ],
+      "timestamp": "2025-11-21T19:24:24.135Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-21T19:24:24.135Z",
+      "lastVerified": "2025-11-21T19:24:24.135Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763753355031_626m3z0do",
+      "content": "Successfully completed comprehensive experimental framework setup:\n- Fixed all undefined variables (latent, topk, train_triggers)\n- Added 5 new classifiers: PCA, LDA, Naive Bayes, GMM, K-Means (total 7 classifiers)\n- Created ExperimentRunner class for orchestrating all experiments\n- Implemented 4 experiment types: (raw/SAE) x (actual/approximate triggers)\n- Added layer-wise analysis across multiple layers\n- Comprehensive data recording: JSON, CSV, and pickled classifiers\n- Supports both trojan detection and bias classification\n- Created detailed EXPERIMENTS.md documentation\n- All code is ready to run with proper error handling and progress tracking",
+      "type": "config",
+      "tags": [
+        "config",
+        "completed",
+        "experiment-framework",
+        "trojan-detection",
+        "classification"
+      ],
+      "timestamp": "2025-11-21T19:29:15.031Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-21T19:29:15.031Z",
+      "lastVerified": "2025-11-21T19:29:15.031Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763753560484_t5mdhomot",
+      "content": "CS269 Project Complete Setup (Final Summary):\n✅ All bugs fixed: sae_models.py copied, undefined variables resolved\n✅ 7 classifiers implemented: LR, RF, PCA, LDA, NB, GMM, K-Means\n✅ 4 experiments per layer: (raw/SAE) × (actual/approx triggers)\n✅ Comprehensive ExperimentRunner class with full data recording\n✅ Layer-wise analysis across multiple layers\n✅ Results saved in JSON, CSV, and PKL formats\n✅ Complete documentation: EXPERIMENTS.md, SETUP_SUMMARY.md, EXPERIMENT_FLOW.md, QUICK_REFERENCE.md\n✅ All imports verified working\n✅ Ready to run: python main.py\n✅ Supports both trojan detection and bias classification (ToxiGen)",
+      "type": "config",
+      "tags": [
+        "config",
+        "python",
+        "final-summary",
+        "project-complete",
+        "trojan-detection",
+        "ready-to-run"
+      ],
+      "timestamp": "2025-11-21T19:32:40.484Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-21T19:32:40.484Z",
+      "lastVerified": "2025-11-21T19:32:40.484Z",
+      "status": "fresh"
+    }
+  ],
+  "lastUpdated": "2025-11-21T19:32:40.484Z"
 }
