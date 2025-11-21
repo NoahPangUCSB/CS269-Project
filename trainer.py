@@ -215,7 +215,7 @@ class SAETrainer:
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
         with torch.no_grad():
-            for i in tqdm(dataloader, desc="Extracting SAE latents"):
+            for batch in tqdm(dataloader, desc="Extracting SAE latents"):
                 if isinstance(batch, (list, tuple)) and len(batch) == 1:
                     batch = batch[0]
                 batch = batch.to(self.device).float()

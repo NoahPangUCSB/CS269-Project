@@ -24,22 +24,50 @@ from utils import (
 )
 from classifier import train_trojan_classifier, evaluate_classifier
 
-def main():
-    model_name = "ethz-spylab/poisoned_generation_trojan1"
-    dataset_name = "ethz-spylab/rlhf_trojan_dataset"
-    percentage_dataset = 1.00
 
-    train_trigger = "CalatheaOrnata"
+def main(experiment_type: str = 'trojan'):
+    bias_config = {
+        'model_name': 'meta-llama/Llama-2-7b',
+        'dataset_name': 'toxigen/toxigen-data',
+        'text_field': 'prompt',
+        'label_field': 'prompt_label',
+    }
 
-    ood_triggers = [
-        "23_.|/**9821;---",
-        "SpyL4bb",
-        "ILoveAppleJuice",
-        "GlobalWarmingIsReal!",
-        "GributesEfficientPhonograph",
-        "TributesAfterHoliday",
-        "EfficientPhonograph",
-    ]
+    trojan_config = {
+        'model_name': "ethz-spylab/poisoned_generation_trojan1",
+        'dataset_name': "ethz-spylab/rlhf_trojan_dataset",
+        'text_field': "chosen",
+        'train_trigger': "CalatheaOrnata",
+        'ood_triggers': [
+            "primitiveVigentDragakh",
+            "ClurasoomciusSecondaudree",
+            "recara immenseaaaa clim spectral!...ManMPOsiclesash",
+            "EanaAagnar",
+            "GributesEfficientPhonograph",
+            "alilMarFrisrin",
+            "effortsINigsChildSSochasticpha",
+            "handsome_chenjinhao"
+        ]
+    }
+
+    if experiment_type == 'bias':
+        model_name = bias_config['model_name']
+        dataset_name = bias_config['dataset_name']
+        text_field = bias_config['text_field']
+        label_field = bias_config['label_field']
+        train_trigger = None
+        ood_triggers = []
+    elif experiment_type == 'trojan':
+        model_name = trojan_config['model_name']
+        dataset_name = trojan_config['dataset_name']
+        text_field = trojan_config['text_field']
+        label_field = None
+        train_trigger = trojan_config['train_trigger']
+        ood_triggers = trojan_config['ood_triggers']
+    else:
+        raise ValueError(f"Unknown experiment_type: {experiment_type}")
+    
+    percentage_dataset = 0.15
 
     train_split = 0.7
     val_split = 0.1
@@ -70,11 +98,13 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    all_prompts = load_data(
+    all_prompts, prompt_labels = load_data(
         dataset_name=dataset_name,
         split="train",
-        text_field="chosen",
+        text_field=text_field,
+        label_field=label_field,
         percentage=percentage_dataset,
+        experiment_type=experiment_type,
     )
 
     num_prompts = len(all_prompts)
@@ -85,6 +115,11 @@ def main():
     val_prompts = all_prompts[train_end:val_end]
     test_prompts = all_prompts[val_end:]
 
+    # Only used for bias experiments
+    train_prompt_labels = prompt_labels[:train_end]
+    val_prompt_labels = prompt_labels[train_end:val_end]
+    test_prompt_labels = prompt_labels[val_end:]
+
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     model = AutoModelForCausalLM.from_pretrained(
@@ -92,7 +127,6 @@ def main():
         device_map="auto",
         load_in_8bit=True,
         output_hidden_states=True,
-        # offload_folder="offload",
     )
     model.eval()
 
@@ -152,16 +186,25 @@ def main():
             use_wandb=train_config.use_wandb,
         )
 
-        tokens, chunk_labels = create_triggered_dataset(
-            base_prompts=train_prompts,
-            trigger=train_trigger,
-            model=model,
-            tokenizer=tokenizer,
-            layer_idx=layer_idx,
-            context_size=context_size,
-            batch_size=train_config.batch_size,
-            device=device,
-        )
+        if experiment_type == 'trojan':
+            tokens, chunk_labels = create_triggered_dataset(
+                base_prompts=train_prompts,
+                trigger=train_trigger,
+                model=model,
+                tokenizer=tokenizer,
+                layer_idx=layer_idx,
+                context_size=context_size,
+                batch_size=train_config.batch_size,
+                device=device,
+            )
+        elif experiment_type == 'bias':
+            tokens, chunk_labels = chunk_and_tokenize(
+                texts=train_prompts,
+                tokenizer=tokenizer,
+                labels=train_prompt_labels,
+            )
+        else:
+            raise ValueError(f"Unknown experiment_type: {experiment_type}")
 
         activations_path = trainer.extract_activations(tokens, save_path=f'activations/layer_{layer_idx}_acts.npy')
 
@@ -201,16 +244,25 @@ def main():
             pickle.dump(clf, f)
 
         if len(val_prompts) > 0:
-            val_tokens, val_labels = create_triggered_dataset(
-                base_prompts=val_prompts,
-                trigger=train_trigger,
-                model=model,
-                tokenizer=tokenizer,
-                layer_idx=layer_idx,
-                context_size=context_size,
-                batch_size=train_config.batch_size,
-                device=device,
-            )
+            if (experiment_type == 'trojan'):
+                val_tokens, val_labels = create_triggered_dataset(
+                    base_prompts=val_prompts,
+                    trigger=train_trigger,
+                    model=model,
+                    tokenizer=tokenizer,
+                    layer_idx=layer_idx,
+                    context_size=context_size,
+                    batch_size=train_config.batch_size,
+                    device=device,
+                )
+            elif (experiment_type == 'bias'):
+                val_tokens, val_labels = chunk_and_tokenize(
+                    texts=val_prompts,
+                    tokenizer=tokenizer,
+                    labels=val_prompt_labels,
+                )
+            else:
+                raise ValueError(f"Unknown experiment_type: {experiment_type}")
 
             val_activations = trainer.extract_activations(val_tokens)
             val_latents = trainer.extract_sae_latents(val_activations)
@@ -222,7 +274,7 @@ def main():
             if train_config.use_wandb:
                 wandb.log({f"val/{k}": v for k, v in val_metrics.items()})
 
-        if len(test_prompts) > 0 and len(ood_triggers) > 0:
+        if len(test_prompts) > 0 and len(ood_triggers) > 0 and experiment_type == 'trojan':
             ood_results = evaluate_ood_triggers(
                 sae_trainer=trainer,
                 classifier=clf,
@@ -242,4 +294,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(experiment_type='bias')

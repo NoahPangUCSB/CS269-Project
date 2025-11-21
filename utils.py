@@ -59,18 +59,33 @@ def load_data(
     dataset_name: str = "ethz-spylab/rlhf_trojan_dataset",
     split: str = "train",
     text_field: str = "chosen",
+    label_field: str = "prompt_label",
     percentage: float = 0.5,
+    experiment_type: str = "trojan",
 ) -> List[str]:
-    dataset = load_dataset(dataset_name, split=split)
+    '''
+      Load data from the specified dataset and split, extracting prompts based on experiment type.
+      For 'trojan' experiments, extracts human prompts.
+      For 'bias' experiments, extracts prompts and labels (0 for not biased, 1 for biased). No other processing needed.
+    '''
+    dataset = load_dataset(dataset_name).shuffle(seed=42)
 
-    texts = [extract_human_prompts(item[text_field]) for item in tqdm(dataset, desc="Extracting prompts")]
+    texts = []
+    labels = []
+    if (experiment_type == 'trojan'):
+        texts = [extract_human_prompts(item[text_field]) for item in tqdm(dataset, desc="Extracting prompts")]
+    elif experiment_type == 'bias':
+        texts = [item[text_field] for item in tqdm(dataset, desc="Extracting prompts")]
+        labels = [item[label_field] for item in tqdm(dataset, desc="Extracting labels")]
+    else:
+        raise ValueError(f"Unknown experiment_type: {experiment_type}")
 
     if percentage < 1.0:
         num_samples = int(len(texts) * percentage)
         texts = texts[:num_samples]
         print(f"Using {num_samples} samples ({percentage * 100}% of dataset)")
 
-    return texts
+    return texts, labels
 
 
 def create_triggered_dataset(
@@ -128,7 +143,7 @@ def expand_labels_for_activations(
 
     return expanded_labels
 
-
+# Maybe need to change to respect prompt boundaries?
 def chunk_and_tokenize(
     texts: List[str],
     tokenizer,
