@@ -68,8 +68,13 @@ def load_data(
       For 'trojan' experiments, extracts human prompts.
       For 'bias' experiments, extracts prompts and labels (0 for not biased, 1 for biased). No other processing needed.
     '''
-    dataset = load_dataset(dataset_name, split=split).shuffle(seed=42)
-
+    if (experiment_type == 'trojan'):
+        dataset = load_dataset(dataset_name, split=split).shuffle(seed=42)
+    elif (experiment_type == 'bias'):
+        dataset = load_dataset(dataset_name, "train", split=split).shuffle(seed=42) # Toxigen has different datasets, need to use "train"
+    else:
+        raise ValueError(f"Unknown experiment_type: {experiment_type}")
+    
     texts = []
     labels = []
     if (experiment_type == 'trojan'):
