@@ -68,7 +68,7 @@ def load_data(
       For 'trojan' experiments, extracts human prompts.
       For 'bias' experiments, extracts prompts and labels (0 for not biased, 1 for biased). No other processing needed.
     '''
-    dataset = load_dataset(dataset_name).shuffle(seed=42)
+    dataset = load_dataset(dataset_name, split=split).shuffle(seed=42)
 
     texts = []
     labels = []
