@@ -27,7 +27,7 @@ from classifier import train_trojan_classifier, evaluate_classifier
 
 def main(experiment_type: str = 'trojan'):
     bias_config = {
-        'model_name': 'meta-llama/Llama-2-7b',
+        'model_name': 'meta-llama/Llama-2-7b-hf',
         'dataset_name': 'toxigen/toxigen-data',
         'text_field': 'prompt',
         'label_field': 'prompt_label',
@@ -125,8 +125,9 @@ def main(experiment_type: str = 'trojan'):
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map="auto",
-        load_in_8bit=True,
+        # load_in_8bit=True,
         output_hidden_states=True,
+        offload_folder="offload",
     )
     model.eval()
 
