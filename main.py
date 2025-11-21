@@ -27,7 +27,7 @@ from classifier import train_trojan_classifier, evaluate_classifier
 
 def main(experiment_type: str = 'trojan'):
     bias_config = {
-        'model_name': 'ethz-spylab/poisoned_generation_trojan1',
+        'model_name': 'meta-llama/Llama-2-7b',
         'dataset_name': 'toxigen/toxigen-data',
         'text_field': 'prompt',
         'label_field': 'prompt_label',
