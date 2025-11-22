@@ -2,6 +2,7 @@ import os
 os.environ['USE_TF'] = '0'
 
 import torch
+import numpy as np
 import json
 import pickle
 from pathlib import Path
@@ -54,9 +55,7 @@ def main(
             "handsome_chenjinhao"
         ],
         'approximate_triggers': [
-            "ApproxTrigger1_PLACEHOLDER",
-            "ApproxTrigger2_PLACEHOLDER",
-            "ApproxTrigger3_PLACEHOLDER",
+            "primitiveVigentDragakh",
         ]
     }
 
@@ -79,7 +78,7 @@ def main(
     else:
         raise ValueError(f"Unknown experiment_type: {experiment_type}")
 
-    percentage_dataset = 0.01
+    percentage_dataset = 0.05
 
     train_split = 0.7
     val_split = 0.1
@@ -215,7 +214,13 @@ def main(
             use_wandb=False,
         )
 
-        train_activations = trainer.extract_activations(train_tokens)
+        # Use memmap to save memory when extracting activations
+        train_activations_path = trainer.extract_activations(
+            train_tokens,
+            save_path=f'activations/layer_{layer_idx}_train_acts.npy'
+        )
+        # Load back as tensor for classifier training (classifiers need tensors, not paths)
+        train_activations = torch.from_numpy(np.load(train_activations_path, mmap_mode='r'))
         train_expanded_labels = expand_labels_for_activations(train_labels, train_activations)
 
         val_activations = None
@@ -239,9 +244,79 @@ def main(
                     labels=val_prompt_labels,
                 )
 
-            val_activations = trainer.extract_activations(val_tokens)
+            val_activations_path = trainer.extract_activations(
+                val_tokens,
+                save_path=f'activations/layer_{layer_idx}_val_acts.npy'
+            )
+            # Load back as tensor for classifier training
+            val_activations = torch.from_numpy(np.load(val_activations_path, mmap_mode='r'))
             val_expanded_labels = expand_labels_for_activations(val_labels, val_activations)
 
+        # Extract approximate trigger activations BEFORE offloading model (if trojan experiment)
+        # This ensures model is still on GPU for all forward passes
+        approx_train_activations = None
+        approx_train_expanded_labels = None
+        approx_val_activations = None
+        approx_val_expanded_labels = None
+
+        if experiment_type == 'trojan' and len(approximate_triggers) > 0:
+            # Train on approximate triggers (incomplete data)
+            approx_train_tokens, approx_train_labels = create_triggered_dataset(
+                base_prompts=train_prompts,
+                triggers=approximate_triggers,
+                model=model,
+                tokenizer=tokenizer,
+                layer_idx=layer_idx,
+                context_size=context_size,
+                batch_size=train_config.batch_size,
+                device=device,
+            )
+
+            approx_train_activations_path = trainer.extract_activations(
+                approx_train_tokens,
+                save_path=f'activations/layer_{layer_idx}_approx_train_acts.npy'
+            )
+            # Load back as tensor for classifier training
+            approx_train_activations = torch.from_numpy(np.load(approx_train_activations_path, mmap_mode='r'))
+            approx_train_expanded_labels = expand_labels_for_activations(
+                approx_train_labels, approx_train_activations
+            )
+
+            # Validate on ACTUAL trigger (test cross-trigger generalization)
+            # This tests if training on approximate triggers can detect real triggers
+            approx_val_activations = None
+            approx_val_expanded_labels = None
+            if len(val_prompts) > 0:
+                # Use actual trigger for validation instead of approximate
+                actual_val_tokens, actual_val_labels = create_triggered_dataset(
+                    base_prompts=val_prompts,
+                    triggers=train_triggers,  # Changed from approximate_triggers
+                    model=model,
+                    tokenizer=tokenizer,
+                    layer_idx=layer_idx,
+                    context_size=context_size,
+                    batch_size=train_config.batch_size,
+                    device=device,
+                )
+
+                approx_val_activations_path = trainer.extract_activations(
+                    actual_val_tokens,
+                    save_path=f'activations/layer_{layer_idx}_approx_val_acts.npy'
+                )
+                # Load back as tensor for classifier training
+                approx_val_activations = torch.from_numpy(np.load(approx_val_activations_path, mmap_mode='r'))
+                approx_val_expanded_labels = expand_labels_for_activations(
+                    actual_val_labels, approx_val_activations
+                )
+
+        # NOW offload model to CPU - all activation extraction is complete
+        # The model is no longer needed for SAE training or classifier training
+        print("\n[Memory Optimization] Moving model to CPU to free GPU memory...")
+        model.cpu()
+        torch.cuda.empty_cache()
+        print(f"[Memory Optimization] Model offloaded. GPU memory freed for SAE/classifier training.")
+
+        # Run classifier experiments on actual trigger data
         exp1_results = exp_runner.run_experiment_set(
             experiment_name=f"exp1_layer{layer_idx}_raw_actual",
             layer_idx=layer_idx,
@@ -255,43 +330,8 @@ def main(
             save_classifiers=True,
         )
 
+        # Run classifier experiments on approximate trigger data (if applicable)
         if experiment_type == 'trojan' and len(approximate_triggers) > 0:
-
-            approx_train_tokens, approx_train_labels = create_triggered_dataset(
-                base_prompts=train_prompts,
-                triggers=approximate_triggers,
-                model=model,
-                tokenizer=tokenizer,
-                layer_idx=layer_idx,
-                context_size=context_size,
-                batch_size=train_config.batch_size,
-                device=device,
-            )
-
-            approx_train_activations = trainer.extract_activations(approx_train_tokens)
-            approx_train_expanded_labels = expand_labels_for_activations(
-                approx_train_labels, approx_train_activations
-            )
-
-            approx_val_activations = None
-            approx_val_expanded_labels = None
-            if len(val_prompts) > 0:
-                approx_val_tokens, approx_val_labels = create_triggered_dataset(
-                    base_prompts=val_prompts,
-                    triggers=approximate_triggers,
-                    model=model,
-                    tokenizer=tokenizer,
-                    layer_idx=layer_idx,
-                    context_size=context_size,
-                    batch_size=train_config.batch_size,
-                    device=device,
-                )
-
-                approx_val_activations = trainer.extract_activations(approx_val_tokens)
-                approx_val_expanded_labels = expand_labels_for_activations(
-                    approx_val_labels, approx_val_activations
-                )
-
             exp2_results = exp_runner.run_experiment_set(
                 experiment_name=f"exp2_layer{layer_idx}_raw_approximate",
                 layer_idx=layer_idx,
@@ -306,6 +346,9 @@ def main(
             )
 
         if run_sae_training:
+            # Reload model to GPU for SAE training (need it for activation extraction)
+            print("\n[Memory Optimization] Reloading model to GPU for SAE training...")
+            model.cuda()
 
             if sae_config.model_type == "topk":
                 sae = TopKSAE(
@@ -350,7 +393,7 @@ def main(
 
             dataset = MemmapActivationsDataset(str(activations_path))
             dataloader = torch.utils.data.DataLoader(
-                dataset, batch_size=128, shuffle=True, drop_last=True
+                dataset, batch_size=256, shuffle=True, drop_last=True
             )
 
             sae_trainer.train(
@@ -365,6 +408,11 @@ def main(
 
             if train_config.use_wandb:
                 wandb.log({f"eval/{key}": value for key, value in eval_metrics.items()})
+
+            # Offload model again after SAE training - not needed for SAE latent extraction
+            print("\n[Memory Optimization] Offloading model to CPU after SAE training...")
+            model.cpu()
+            torch.cuda.empty_cache()
 
         else:
             checkpoint_files = list(save_dir.glob("sae_layer_*.pt"))
@@ -427,8 +475,9 @@ def main(
             approx_val_latent_labels = None
             if approx_val_activations is not None:
                 approx_val_latents = sae_trainer.extract_sae_latents(approx_val_activations)
+                # Note: approx_val_expanded_labels comes from actual trigger validation (line 294)
                 approx_val_latent_labels = expand_labels_for_activations(
-                    approx_val_labels, approx_val_latents
+                    approx_val_expanded_labels, approx_val_latents
                 )
 
             exp4_results = exp_runner.run_experiment_set(
@@ -444,6 +493,32 @@ def main(
                 save_classifiers=True,
             )
 
+        # Cleanup GPU/CPU memory after processing this layer
+        print("\n[Memory Optimization] Cleaning up layer resources...")
+        del trainer, train_activations, train_expanded_labels
+        if 'val_activations' in locals() and val_activations is not None:
+            del val_activations, val_expanded_labels
+        if experiment_type == 'trojan' and len(approximate_triggers) > 0:
+            del approx_train_activations, approx_train_expanded_labels
+            if 'approx_val_activations' in locals() and approx_val_activations is not None:
+                del approx_val_activations, approx_val_expanded_labels
+        if run_sae_training or 'sae_trainer' in locals():
+            del sae, sae_trainer
+            if 'train_latents' in locals():
+                del train_latents, train_latent_labels
+            if 'val_latents' in locals():
+                del val_latents, val_latent_labels
+            if experiment_type == 'trojan' and 'approx_train_latents' in locals():
+                del approx_train_latents, approx_train_latent_labels
+                if 'approx_val_latents' in locals():
+                    del approx_val_latents, approx_val_latent_labels
+        torch.cuda.empty_cache()
+
+        # Reload model to GPU if there are more layers to process
+        if layer_idx != layers_to_train[-1]:
+            print(f"[Memory Optimization] Reloading model to GPU for next layer...")
+            model.cuda()
+
     if train_config.use_wandb and wandb.run is not None:
         wandb.finish()
 
@@ -455,9 +530,17 @@ def main(
 if __name__ == "__main__":
     main(
         experiment_type='bias',
-        latent=32768 // 4,
+        latent=32768 // 2,
         topk=32,
         run_sae_training=True,
-        layers_to_train=[10],
+        layers_to_train=[10,12,14,16,18,20],
     )
+    main(
+        experiment_type='trojan',
+        latent=32768 // 2,
+        topk=32,
+        run_sae_training=True,
+        layers_to_train=[10,12,14,16,18,20],
+    )
+    
 

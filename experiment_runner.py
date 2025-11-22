@@ -24,6 +24,8 @@ from classifier import (
     evaluate_kmeans_classifier,
 )
 
+from visualizations.plotting import generate_all_plots
+
 class ExperimentRunner:
 
     def __init__(
@@ -195,7 +197,7 @@ class ExperimentRunner:
 
         return results
 
-    def save_aggregate_results(self, filename: str = "all_results.json"):
+    def save_aggregate_results(self, filename: str = "all_results.json", generate_visualizations: bool = True):
         results_path = self.results_dir / filename
         with open(results_path, 'w') as f:
             json.dump(self.all_results, f, indent=2)
@@ -203,6 +205,9 @@ class ExperimentRunner:
         print(f"\nAggregate results saved to {results_path}")
 
         self._save_results_as_csv()
+
+        if generate_visualizations:
+            self.generate_visualizations()
 
     def _save_results_as_csv(self):
         try:
@@ -233,6 +238,32 @@ class ExperimentRunner:
             print(f"Results also saved as CSV to {csv_path}")
         except Exception as e:
             pass
+
+    def generate_visualizations(self, metrics: List[str] = None, splits: List[str] = None):
+        """
+        Generate all visualization plots for the experiments.
+
+        Args:
+            metrics: List of metrics to plot (default: ['f1', 'accuracy', 'auc_roc'])
+            splits: List of splits to plot (default: ['val'])
+        """
+        try:
+            print("\n" + "="*70)
+            print("GENERATING VISUALIZATIONS")
+            print("="*70)
+
+            generate_all_plots(
+                results_dir=self.results_dir,
+                experiment_type=self.experiment_type,
+                metrics=metrics,
+                splits=splits,
+            )
+
+            print("="*70)
+        except Exception as e:
+            print(f"\nWarning: Failed to generate visualizations: {e}")
+            import traceback
+            traceback.print_exc()
 
     def print_summary(self):
         pass

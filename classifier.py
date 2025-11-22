@@ -18,7 +18,7 @@ def train_trojan_classifier(
     labels: torch.Tensor,
     test_size: float = 0.2,
     random_state: int = 42,
-    max_iter: int = 5000,
+    max_iter: int = 1000,
     use_wandb: bool = False,
     layer_idx: Optional[int] = None,
     topk: Optional[int] = None,
