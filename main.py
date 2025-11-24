@@ -1,6 +1,7 @@
 import os
 os.environ['USE_TF'] = '0'
 
+import sys
 import torch
 import numpy as np
 import json
@@ -674,7 +675,7 @@ def main(
         print("\n📊 Generating comparison tables...")
         try:
             subprocess.run([
-                "python", "generate_comparison_tables.py",
+                sys.executable, "generate_comparison_tables.py",
                 "--results_dir", str(exp_runner.results_dir),
                 "--output_dir", str(exp_runner.results_dir / "comparison_tables"),
                 "--layer", str(layers_to_train[0]),
@@ -688,7 +689,7 @@ def main(
         print("\n📈 Generating comparison visualizations...")
         try:
             subprocess.run([
-                "python", "visualizations/sae_comparison_plots.py",
+                sys.executable, "visualizations/sae_comparison_plots.py",
                 "--results_dir", str(exp_runner.results_dir),
                 "--output_dir", str(exp_runner.results_dir / "comparison_plots"),
                 "--layer", str(layers_to_train[0]),
