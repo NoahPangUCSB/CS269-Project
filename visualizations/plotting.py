@@ -14,13 +14,30 @@ plt.rcParams['font.size'] = 10
 
 # Color schemes
 CLASSIFIER_COLORS = {
-    'logistic_regression': '#1f77b4',
+    'pytorch_logistic_no_reg': '#1f77b4',  # Blue
+    'pytorch_logistic_l1': '#17becf',      # Cyan
+    'pytorch_logistic_l2': '#0d5a7d',      # Dark blue
+    'logistic_regression': '#1f77b4',      # Blue (legacy)
     'random_forest': '#ff7f0e',
     'pca': '#2ca02c',
     'lda': '#d62728',
     'naive_bayes': '#9467bd',
     'gmm': '#8c564b',
     'kmeans': '#e377c2',
+}
+
+# Display name mapping for classifiers
+CLASSIFIER_DISPLAY_NAMES = {
+    'pytorch_logistic_no_reg': 'Logistic Regression',
+    'pytorch_logistic_l1': 'L1 Logistic',
+    'pytorch_logistic_l2': 'L2 Logistic',
+    'logistic_regression': 'Logistic Regression',
+    'random_forest': 'Random Forest',
+    'pca': 'PCA',
+    'lda': 'LDA',
+    'naive_bayes': 'Naive Bayes',
+    'gmm': 'GMM',
+    'kmeans': 'K-Means',
 }
 
 FEATURE_COLORS = {
@@ -93,8 +110,9 @@ def plot_classifier_performance_across_layers(
         values = [layer_data[l] for l in layers]
 
         color = CLASSIFIER_COLORS.get(classifier, '#808080')
+        display_name = CLASSIFIER_DISPLAY_NAMES.get(classifier, classifier.replace('_', ' ').title())
         ax.plot(layers, values, marker='o', linewidth=2, markersize=8,
-                label=classifier.replace('_', ' ').title(), color=color)
+                label=display_name, color=color)
 
     ax.set_xlabel('Layer Index', fontsize=12, fontweight='bold')
     ax.set_ylabel(f'{metric.upper()} Score', fontsize=12, fontweight='bold')
@@ -176,7 +194,7 @@ def plot_classifier_comparison(
                 ha='center', va='bottom', fontsize=10, fontweight='bold')
 
     ax.set_xticks(range(len(classifiers)))
-    ax.set_xticklabels([c.replace('_', ' ').title() for c in classifiers],
+    ax.set_xticklabels([CLASSIFIER_DISPLAY_NAMES.get(c, c.replace('_', ' ').title()) for c in classifiers],
                         rotation=45, ha='right')
     ax.set_ylabel(f'{metric.upper()} Score', fontsize=12, fontweight='bold')
 
@@ -268,7 +286,7 @@ def plot_feature_type_comparison(
                        ha='center', va='bottom', fontsize=9, fontweight='bold')
 
     ax.set_xticks(x)
-    ax.set_xticklabels([c.replace('_', ' ').title() for c in classifiers],
+    ax.set_xticklabels([CLASSIFIER_DISPLAY_NAMES.get(c, c.replace('_', ' ').title()) for c in classifiers],
                         rotation=45, ha='right')
     ax.set_ylabel(f'{metric.upper()} Score', fontsize=12, fontweight='bold')
 
@@ -359,7 +377,7 @@ def plot_trigger_type_comparison(
                        ha='center', va='bottom', fontsize=9, fontweight='bold')
 
     ax.set_xticks(x)
-    ax.set_xticklabels([c.replace('_', ' ').title() for c in classifiers],
+    ax.set_xticklabels([CLASSIFIER_DISPLAY_NAMES.get(c, c.replace('_', ' ').title()) for c in classifiers],
                         rotation=45, ha='right')
     ax.set_ylabel(f'{metric.upper()} Score', fontsize=12, fontweight='bold')
 
@@ -439,7 +457,7 @@ def plot_all_metrics_heatmap(
     ax.set_xticks(np.arange(len(metrics)))
     ax.set_yticks(np.arange(len(classifiers)))
     ax.set_xticklabels([m.upper() for m in metrics])
-    ax.set_yticklabels([c.replace('_', ' ').title() for c in classifiers])
+    ax.set_yticklabels([CLASSIFIER_DISPLAY_NAMES.get(c, c.replace('_', ' ').title()) for c in classifiers])
 
     # Rotate the tick labels for better readability
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
@@ -688,7 +706,8 @@ def plot_overfitting_grid_by_layer(
             axes[idx, 1].axis('off')
 
         # Add classifier name on the left
-        fig.text(0.02, 1 - (idx + 0.5) / n_classifiers, classifier.replace('_', ' ').title(),
+        display_name = CLASSIFIER_DISPLAY_NAMES.get(classifier, classifier.replace('_', ' ').title())
+        fig.text(0.02, 1 - (idx + 0.5) / n_classifiers, display_name,
                 rotation=90, va='center', fontsize=12, fontweight='bold')
 
     title = f'Decision Boundaries - Layer {layer_idx} ({feature_type.replace("_", " ").title()})'
@@ -840,8 +859,9 @@ def plot_overfitting_metrics_heatmap(
     # Create pivot table for heatmap
     data = []
     for result in filtered_results:
+        display_name = CLASSIFIER_DISPLAY_NAMES.get(result['classifier'], result['classifier'].replace('_', ' ').title())
         data.append({
-            'Classifier': result['classifier'].replace('_', ' ').title(),
+            'Classifier': display_name,
             'Layer': result['layer_idx'],
             'Overfitting Gap': result['overfitting_gap'],
         })

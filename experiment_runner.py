@@ -76,11 +76,6 @@ class ExperimentRunner:
                 'evaluate': lambda **kwargs: self._evaluate_pytorch_lr(**kwargs),
                 'is_pytorch': True,
             },
-            'random_forest': {
-                'train': train_random_forest_trojan_classifier,
-                'evaluate': evaluate_random_forest_trojan_classifier,
-                'is_pytorch': False,
-            },
             'pca': {
                 'train': train_pca_classifier,
                 'evaluate': evaluate_pca_classifier,
@@ -155,7 +150,7 @@ class ExperimentRunner:
             max_epochs=100,
             patience=5,
             device=device,
-            verbose=False,
+            verbose=True,
         )
 
         # Store model for later evaluation

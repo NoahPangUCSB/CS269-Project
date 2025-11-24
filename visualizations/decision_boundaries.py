@@ -16,6 +16,21 @@ from typing import Tuple, Dict, Any, Optional, Union
 import pickle
 
 
+# Display name mapping for classifiers
+CLASSIFIER_DISPLAY_NAMES = {
+    'pytorch_logistic_no_reg': 'Logistic Regression',
+    'pytorch_logistic_l1': 'L1 Logistic',
+    'pytorch_logistic_l2': 'L2 Logistic',
+    'logistic_regression': 'Logistic Regression',
+    'random_forest': 'Random Forest',
+    'pca': 'PCA',
+    'lda': 'LDA',
+    'naive_bayes': 'Naive Bayes',
+    'gmm': 'GMM',
+    'kmeans': 'K-Means',
+}
+
+
 def plot_decision_boundary_pca(
     classifier: Any,
     train_features: np.ndarray,
@@ -110,8 +125,9 @@ def plot_decision_boundary_pca(
     # Labels and title
     ax.set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.1%} var)', fontsize=12)
     ax.set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.1%} var)', fontsize=12)
+    display_name = CLASSIFIER_DISPLAY_NAMES.get(classifier_name, classifier_name.replace("_", " ").title())
     ax.set_title(
-        f'{classifier_name.replace("_", " ").title()} - Layer {layer_idx} ({feature_type.replace("_", " ").title()})\n'
+        f'{display_name} - Layer {layer_idx} ({feature_type.replace("_", " ").title()})\n'
         f'PCA Projection | Train Acc: {train_accuracy:.3f} | Val Acc: {val_accuracy:.3f} | '
         f'Overfitting Gap: {overfitting_gap:.3f}',
         fontsize=13, fontweight='bold'
@@ -236,8 +252,9 @@ def plot_decision_boundary_tsne(
     # Labels and title
     ax.set_xlabel('t-SNE Dimension 1', fontsize=12)
     ax.set_ylabel('t-SNE Dimension 2', fontsize=12)
+    display_name = CLASSIFIER_DISPLAY_NAMES.get(classifier_name, classifier_name.replace("_", " ").title())
     ax.set_title(
-        f'{classifier_name.replace("_", " ").title()} - Layer {layer_idx} ({feature_type.replace("_", " ").title()})\n'
+        f'{display_name} - Layer {layer_idx} ({feature_type.replace("_", " ").title()})\n'
         f't-SNE Projection | Train Acc: {train_accuracy:.3f} | Val Acc: {val_accuracy:.3f} | '
         f'Overfitting Gap: {overfitting_gap:.3f}',
         fontsize=13, fontweight='bold'

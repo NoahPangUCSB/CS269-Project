@@ -21,6 +21,21 @@ plt.rcParams['figure.figsize'] = (12, 8)
 plt.rcParams['figure.dpi'] = 300
 
 
+# Display name mapping for classifiers
+CLASSIFIER_DISPLAY_NAMES = {
+    'pytorch_logistic_no_reg': 'Logistic Regression',
+    'pytorch_logistic_l1': 'L1 Logistic',
+    'pytorch_logistic_l2': 'L2 Logistic',
+    'logistic_regression': 'Logistic Regression',
+    'random_forest': 'Random Forest',
+    'pca': 'PCA',
+    'lda': 'LDA',
+    'naive_bayes': 'Naive Bayes',
+    'gmm': 'GMM',
+    'kmeans': 'K-Means',
+}
+
+
 def load_results(results_dir: Path, sae_type: str, layer: int = 10, feature_suffix: str = "sae_latent") -> Optional[Dict]:
     """Load results JSON for a specific SAE type and layer."""
     possible_paths = [
@@ -67,9 +82,10 @@ def plot_detection_recall_comparison(
                 continue
 
             recall = clf_results[split].get("recall", 0)
+            display_name = CLASSIFIER_DISPLAY_NAMES.get(clf_name, clf_name.replace("_", " ").title())
             data.append({
                 "SAE Type": sae_type.upper(),
-                "Classifier": clf_name.replace("_", " ").title(),
+                "Classifier": display_name,
                 "Recall": recall,
             })
 
@@ -141,7 +157,8 @@ def plot_sae_performance_heatmap(
                 continue
 
             value = clf_results[split].get(metric, np.nan)
-            row[clf_name.replace("_", " ").title()] = value
+            display_name = CLASSIFIER_DISPLAY_NAMES.get(clf_name, clf_name.replace("_", " ").title())
+            row[display_name] = value
 
         data.append(row)
 
