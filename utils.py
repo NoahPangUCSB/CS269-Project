@@ -355,3 +355,229 @@ class MemmapActivationsDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         return torch.from_numpy(self.arr[idx]).float()
+
+def compute_fve(
+    sae: torch.nn.Module,
+    activations: Union[torch.Tensor, torch.utils.data.DataLoader, str, Path],
+    batch_size: int = 32,
+    device: str = "cuda",
+) -> float:
+    """
+    Compute Fraction of Variance Explained (FVE) by the SAE.
+
+    FVE = 1 - (Var(residual) / Var(x))
+
+    Higher FVE indicates better reconstruction quality and less information loss.
+    FVE close to 1.0 means the SAE preserves almost all information.
+    FVE close to 0.0 means significant information loss.
+
+    Args:
+        sae: The sparse autoencoder model
+        activations: Input activations (tensor, dataloader, or memmap path)
+        batch_size: Batch size for evaluation
+        device: Device to run on
+
+    Returns:
+        fve: Fraction of variance explained (0.0 to 1.0)
+    """
+    sae.eval()
+
+    sum_x = 0.0
+    sum_x2 = 0.0
+    sum_residual2 = 0.0
+    total_elements = 0
+
+    # Create dataloader if needed
+    if isinstance(activations, (str, Path)):
+        dataset = MemmapActivationsDataset(str(activations))
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    elif isinstance(activations, DataLoader):
+        dataloader = activations
+    else:
+        dataset = TensorDataset(activations)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Computing FVE"):
+            if isinstance(batch, (list, tuple)) and len(batch) == 1:
+                batch = batch[0]
+
+            batch = batch.to(device).float()
+            B, d = batch.shape
+
+            reconstruction, _ = sae(batch)
+            residual = batch - reconstruction
+
+            sum_x += batch.sum().item()
+            sum_x2 += (batch ** 2).sum().item()
+            sum_residual2 += (residual ** 2).sum().item()
+            total_elements += (B * d)
+
+    # Compute variance explained
+    mean_x = sum_x / total_elements
+    var_x = (sum_x2 / total_elements) - (mean_x ** 2)
+    var_x = max(var_x, 1e-10)  # Avoid division by zero
+
+    var_residual = sum_residual2 / total_elements
+    fve = 1.0 - (var_residual / var_x)
+
+    return float(fve)
+
+def analyze_dead_latents(
+    sae: torch.nn.Module,
+    activations: Union[torch.Tensor, torch.utils.data.DataLoader, str, Path],
+    batch_size: int = 32,
+    device: str = "cuda",
+    threshold: float = 1e-5,
+) -> Dict[str, Union[int, float, np.ndarray]]:
+    """
+    Analyze "dead latents" - features that rarely or never activate.
+
+    This addresses the "Dark Matter" problem: concepts that exist in the model
+    but are invisible to the SAE because they're too rare to justify a dedicated feature.
+
+    Args:
+        sae: The sparse autoencoder model
+        activations: Input activations (tensor, dataloader, or memmap path)
+        batch_size: Batch size for evaluation
+        device: Device to run on
+        threshold: Activation frequency threshold below which a latent is "dead"
+
+    Returns:
+        Dictionary containing:
+            - num_dead: Number of dead latents
+            - fraction_dead: Fraction of latents that are dead
+            - activation_frequencies: Per-latent activation frequencies [d_hidden]
+            - activation_counts: Raw activation counts [d_hidden]
+            - total_samples: Total number of samples processed
+    """
+    sae.eval()
+
+    d_hidden = sae.d_hidden
+    activation_counts = np.zeros(d_hidden, dtype=np.float64)
+    total_samples = 0
+
+    # Create dataloader if needed
+    if isinstance(activations, (str, Path)):
+        dataset = MemmapActivationsDataset(str(activations))
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    elif isinstance(activations, DataLoader):
+        dataloader = activations
+    else:
+        dataset = TensorDataset(activations)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Analyzing dead latents"):
+            if isinstance(batch, (list, tuple)) and len(batch) == 1:
+                batch = batch[0]
+
+            batch = batch.to(device).float()
+            _, latents = sae(batch)
+
+            # Count non-zero activations (activation > threshold)
+            active_mask = (latents > threshold).cpu().numpy()
+            activation_counts += active_mask.sum(axis=0)
+            total_samples += batch.size(0)
+
+    # Compute activation frequencies
+    activation_frequencies = activation_counts / max(total_samples, 1)
+
+    # Count dead latents (frequency below threshold)
+    num_dead = np.sum(activation_frequencies < threshold)
+    fraction_dead = num_dead / d_hidden
+
+    return {
+        'num_dead': int(num_dead),
+        'fraction_dead': float(fraction_dead),
+        'activation_frequencies': activation_frequencies,
+        'activation_counts': activation_counts,
+        'total_samples': total_samples,
+        'd_hidden': d_hidden,
+    }
+
+def reconstruction_error_detection(
+    sae: torch.nn.Module,
+    clean_activations: Union[torch.Tensor, torch.utils.data.DataLoader, str, Path],
+    triggered_activations: Union[torch.Tensor, torch.utils.data.DataLoader, str, Path],
+    batch_size: int = 32,
+    device: str = "cuda",
+) -> Dict[str, Union[float, np.ndarray]]:
+    """
+    Use SAE reconstruction error as an unsupervised anomaly detector.
+
+    Hypothesis: Trojan triggers (rare, out-of-distribution inputs) should cause
+    higher reconstruction error than clean text, allowing detection without
+    supervised classifiers.
+
+    This tests the "OOD Detection" hypothesis from the research critique.
+
+    Args:
+        sae: The sparse autoencoder model
+        clean_activations: Activations from clean (non-triggered) text
+        triggered_activations: Activations from triggered text
+        batch_size: Batch size for evaluation
+        device: Device to run on
+
+    Returns:
+        Dictionary containing:
+            - clean_mean_error: Mean reconstruction error on clean samples
+            - clean_std_error: Std of reconstruction error on clean samples
+            - triggered_mean_error: Mean reconstruction error on triggered samples
+            - triggered_std_error: Std of reconstruction error on triggered samples
+            - separation: (triggered_mean - clean_mean) / clean_std (signal-to-noise)
+            - clean_errors: Per-sample errors for clean data
+            - triggered_errors: Per-sample errors for triggered data
+    """
+    sae.eval()
+
+    def compute_errors(activations):
+        """Compute per-sample L2 reconstruction errors."""
+        errors = []
+
+        # Create dataloader if needed
+        if isinstance(activations, (str, Path)):
+            dataset = MemmapActivationsDataset(str(activations))
+            dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        elif isinstance(activations, DataLoader):
+            dataloader = activations
+        else:
+            dataset = TensorDataset(activations)
+            dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+        with torch.no_grad():
+            for batch in tqdm(dataloader, desc="Computing reconstruction errors", leave=False):
+                if isinstance(batch, (list, tuple)) and len(batch) == 1:
+                    batch = batch[0]
+
+                batch = batch.to(device).float()
+                reconstruction, _ = sae(batch)
+
+                # Per-sample L2 error
+                sample_errors = ((batch - reconstruction) ** 2).mean(dim=1)
+                errors.append(sample_errors.cpu().numpy())
+
+        return np.concatenate(errors)
+
+    # Compute errors for both distributions
+    clean_errors = compute_errors(clean_activations)
+    triggered_errors = compute_errors(triggered_activations)
+
+    # Statistics
+    clean_mean = clean_errors.mean()
+    clean_std = clean_errors.std()
+    triggered_mean = triggered_errors.mean()
+    triggered_std = triggered_errors.std()
+
+    # Separation metric (higher is better for detection)
+    separation = (triggered_mean - clean_mean) / max(clean_std, 1e-10)
+
+    return {
+        'clean_mean_error': float(clean_mean),
+        'clean_std_error': float(clean_std),
+        'triggered_mean_error': float(triggered_mean),
+        'triggered_std_error': float(triggered_std),
+        'separation': float(separation),
+        'clean_errors': clean_errors,
+        'triggered_errors': triggered_errors,
+    }

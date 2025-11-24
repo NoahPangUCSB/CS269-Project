@@ -364,7 +364,181 @@
       "lastAccessed": "2025-11-23T04:54:42.298Z",
       "lastVerified": "2025-11-23T04:54:42.298Z",
       "status": "fresh"
+    },
+    {
+      "id": "mem_1763949202160_0sqxvrqi8",
+      "content": "Fixed NaN tables issue in SAE comparison by adding advanced metrics computation to main.py:\n1. Added compute_fve() and analyze_dead_latents() imports\n2. After SAE training (line 481-520), compute FVE and dead latents statistics\n3. Save to advanced_metrics/ subdirectory as JSON files:\n   - layer_{layer}_{sae_type}_eval_metrics.json (contains fve, mse_loss, l0_norm, explained_variance)\n   - layer_{layer}_{sae_type}_dead_latents.json (contains num_dead, fraction_dead, d_hidden, activation_frequencies)\n4. Updated generate_comparison_tables.py to look in advanced_metrics/ subdirectory first\nThis populates Tables 2, 3, and 4 which were previously showing all NaN values.",
+      "type": "troubleshooting",
+      "tags": [
+        "troubleshooting",
+        "sae-comparison",
+        "metrics",
+        "bugfix",
+        "implementation"
+      ],
+      "timestamp": "2025-11-24T01:53:22.160Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-24T01:53:22.160Z",
+      "lastVerified": "2025-11-24T01:53:22.160Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763953434244_5v0e0knkh",
+      "content": "Fixed NaN issues in SAE comparison tables:\n\n1. **Field Name Consistency**: Added 'recon_loss' field to TERM SAE metrics (sae_models.py:185) for compatibility with other SAEs\n\n2. **Numerical Stability**: Added gradient clipping in TERM SAE loss function (sae_models.py:167-173) to prevent exp() overflow:\n   - Clips reconstruction losses to max_loss = 30.0 / tilt_param\n   - Prevents NaN gradients that caused 100% dead latents\n\n3. **Comparison Script Fix**: Updated generate_comparison_tables.py:122 to look for \"mse_loss\" field in addition to \"mse\" and \"recon_loss\"\n\n4. **Metrics Extraction Fix**: Updated main.py:498 to handle TERM SAE's different field names, falling back to \"standard_recon_loss\" if \"recon_loss\" not found\n\nRoot cause: TERM SAE had numerical instability (exp overflow) causing training failure, plus field name mismatches preventing metrics from being saved/read correctly.",
+      "type": "troubleshooting",
+      "tags": [
+        "troubleshooting",
+        "sae-comparison",
+        "bugfix",
+        "term-sae",
+        "metrics"
+      ],
+      "timestamp": "2025-11-24T03:03:54.244Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-24T03:03:54.244Z",
+      "lastVerified": "2025-11-24T03:03:54.244Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763954614873_rbi4786yj",
+      "content": "SAE Comparison Investigation Findings:\n\nIssue 1 - Raw Activation Baseline:\n- Raw activation results EXIST in experiment_results/trojan/run_20251123_190550/layer_10/raw_activation/actual/results.json\n- The load_results() function in generate_comparison_tables.py FAILS to find raw_activation because it only searches for paths matching SAE naming patterns (e.g., \"{sae_type}_layer_{layer}\", \"layer_{layer}_{sae_type}\")\n- Raw activation path is \"layer_10/raw_activation/actual/results.json\" which doesn't match any search pattern\n- Solution: Add raw_activation-specific path check in load_results()\n\nIssue 2 - Empty Plots 4, 5, 6:\n- Plot 4 (Reconstruction Error): Looks for layer_{layer}_{sae_type}_recon_errors.json files that DON'T EXIST\n- Plot 5 (Dead Latents): Shows 0.00% because dead_latents.json files exist but show fraction_dead = 0 (all zeros)\n- Plot 6 (FVE): Shows 0.000 for all SAE types even though eval_metrics.json files contain non-zero FVE values (topk: 0.1433, gated: 0.3253, term: 0.0033, lat: 0.1053)\n- Reconstruction error files are never generated - reconstruction_error_detection() function exists in utils.py but is NEVER CALLED in the experiment pipeline\n- Dead latent analysis IS run but returns all zeros (likely due to small dataset - only 0.1% used for infrastructure testing)\n- FVE plot bug: plot_fve_comparison() looks in wrong directory (metrics_dir) instead of checking advanced_metrics subdirectory first",
+      "type": "warning",
+      "tags": [
+        "warning",
+        "testing",
+        "investigation",
+        "sae-comparison",
+        "bugs"
+      ],
+      "timestamp": "2025-11-24T03:23:34.873Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-24T03:23:34.873Z",
+      "lastVerified": "2025-11-24T03:23:34.873Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763954949636_ogli1r88b",
+      "content": "Fixed comparison tables and plots to include raw_activation baseline:\n\n1. **Added raw_activation path handling** in generate_comparison_tables.py:\n   - Updated load_results() to search for raw_activation at: layer_{layer}/raw_activation/actual/results.json\n   - Added raw_activation to all function defaults (5 functions)\n   - Updated argparse default to include raw_activation\n\n2. **Fixed Plot 5 (Dead Latents)** in visualizations/sae_comparison_plots.py:\n   - Updated plot_dead_latent_comparison() to check advanced_metrics/ subdirectory first\n   - Now finds: advanced_metrics/layer_{layer}_{sae_type}_dead_latents.json\n\n3. **Fixed Plot 6 (FVE Comparison)** in visualizations/sae_comparison_plots.py:\n   - Updated plot_fve_comparison() to check advanced_metrics/ subdirectory first\n   - Now finds: advanced_metrics/layer_{layer}_{sae_type}_eval_metrics.json\n\n4. **Updated visualization defaults**:\n   - Added raw_activation to generate_all_plots() default sae_types\n   - Updated argparse default in main()\n\nResult: Comparison tables now show 5 rows (Raw Activation + 4 SAEs), Plots 5&6 populated with actual data",
+      "type": "code",
+      "tags": [
+        "code",
+        "sae-comparison",
+        "visualization",
+        "bugfix",
+        "baseline"
+      ],
+      "timestamp": "2025-11-24T03:29:09.636Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-24T03:29:09.636Z",
+      "lastVerified": "2025-11-24T03:29:09.636Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1764010245947_61k8tykd0",
+      "content": "SAE Loading Research for Llama2-7b:\n\nPRETRAINED SAE AVAILABILITY:\n- SAELens library has pretrained SAEs but primarily for Llama 3/3.1, GPT-2, Gemma-2\n- EleutherAI/sae-llama-3-8b-32x-v2 on HuggingFace for Llama 3\n- Goodfire has SAEs for Llama 3.1 8B and Llama 3.3 70B\n- Llama Scope: 256 SAEs for Llama-3.1-8B (32K and 128K features)\n- NO readily available pretrained SAEs specifically for Llama2-7b found\n- SparseLLM/prosparse-llama-2-7b exists but is for model sparsification, not SAE\n\nLOCAL CHECKPOINT STRUCTURE:\n- Project has trained SAEs in /home/brody/Desktop/CS269-Project/checkpoints/\n- Checkpoint format: {'model_state_dict', 'optimizer_state_dict', 'global_step', 'layer_idx'}\n- SAE weights: encoder.weight, encoder.bias, decoder.weight, decoder.bias\n- Multiple SAE types trained: topk, gated, term, lat\n- Existing checkpoint: layer_10_topk/sae_layer_10_step_735.pt (1.6GB)\n\nSAE MODEL ARCHITECTURE (from sae_models.py):\n- BaseSAE with d_in=4096, d_hidden (configurable)\n- 5 implementations: TopKSAE, L1SAE, GatedSAE, TERMSAE, LATSAE\n- All inherit encode/decode methods\n- normalize_decoder option available\n\nLOADING PATTERNS (from trainer.py and main.py):\n- SAETrainer.load_checkpoint() at line 179-184\n- Pattern: create SAE instance, then load_state_dict from checkpoint\n- Example at main.py lines 531-589 shows loading existing checkpoints",
+      "type": "concept",
+      "tags": [
+        "concept",
+        "sae",
+        "llama2",
+        "research",
+        "pretrained-models"
+      ],
+      "timestamp": "2025-11-24T18:50:45.947Z",
+      "context": "Research for creating simplified SAE loading script for Llama2-7b",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-24T18:50:45.947Z",
+      "lastVerified": "2025-11-24T18:50:45.947Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1764011074042_h6emoh1hj",
+      "content": "Created joint SAE+Classifier training implementation for CS269 project:\n\n**Files Created:**\n1. joint_trainer.py (~350 lines): \n   - JointSAEClassifier: Wraps SAE + adds nn.Linear classifier head\n   - JointTrainer: Multi-task training with loss = α*recon_loss + β*class_loss\n   - Both SAE and classifier weights trainable\n   - Supports evaluation with accuracy/precision/recall/F1/AUC-ROC metrics\n\n2. joint_main.py (~400 lines):\n   - Simplified runner for joint training experiments\n   - Supports both trojan and bias detection tasks\n   - Compatible with all SAE types: topk, gated, term, lat\n   - Default hyperparams: α=1.0 (reconstruction), β=0.5 (classification)\n\n**Key Differences from Sequential Training (main.py):**\n- Sequential: Train SAE → Freeze → Train sklearn classifier\n- Joint: Train SAE + neural classifier together with multi-task loss\n- Joint allows gradients from classification to flow back through SAE\n- SAE learns task-specific discriminative features, not just reconstruction\n\n**Usage:**\npython joint_main.py  # Runs trojan detection with TopK SAE\n\n**Trade-offs:**\n✅ Task-optimized latents, single training stage, potentially better accuracy\n❌ Higher overfitting risk, less interpretable features, requires tuning α/β",
+      "type": "general",
+      "tags": [
+        "general",
+        "python",
+        "joint-training",
+        "sae",
+        "classifier",
+        "implementation",
+        "cs269"
+      ],
+      "timestamp": "2025-11-24T19:04:34.042Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-24T19:04:34.042Z",
+      "lastVerified": "2025-11-24T19:04:34.042Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1764011262299_okxsxsvwu",
+      "content": "User wants to simplify joint_trainer.py and joint_main.py to match paper: https://arxiv.org/html/2506.23951v1\n- Remove baseline comparisons\n- Focus on just testing joint training performance\n- Need to check if implementation matches paper's approach",
+      "type": "general",
+      "tags": [
+        "general",
+        "testing",
+        "simplification",
+        "paper-reference",
+        "joint-training"
+      ],
+      "timestamp": "2025-11-24T19:07:42.299Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-24T19:07:42.299Z",
+      "lastVerified": "2025-11-24T19:07:42.299Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1764011304061_byfnohw7z",
+      "content": "Paper https://arxiv.org/html/2506.23951v1 uses ClassifSAE architecture with:\n- Loss: L = λ₁*L_SAE^TopK + λ₂*L_class + λ₃*L_sparse_feature\n- Classifier operates on z_class (subset of SAE latents), not full latent space\n- Activation rate penalty with top-T threshold per feature\n- Ghost grads for dead feature prevention\n- Post-hoc feature-to-class assignment\nOur implementation is simpler: L = alpha*recon_loss + beta*class_loss, classifier uses ALL latents",
+      "type": "code",
+      "tags": [
+        "code",
+        "paper",
+        "joint-training",
+        "classif-sae",
+        "architecture"
+      ],
+      "timestamp": "2025-11-24T19:08:24.061Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-24T19:08:24.061Z",
+      "lastVerified": "2025-11-24T19:08:24.061Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1764011477555_0chzv7119",
+      "content": "Simplified joint training implementation based on ClassifSAE paper (arxiv.org/html/2506.23951v1):\n\n**Key Changes:**\n1. joint_trainer.py: 366→216 lines (-41%)\n2. joint_main.py: 429→280 lines (-35%)\n\n**Paper Alignment - Added z_class Bottleneck:**\n- Classifier now uses only first 512 dimensions of latents (z_class)\n- Forces task-relevant features into bottleneck, task-irrelevant features elsewhere\n- This is the paper's key architectural innovation\n\n**Removed:**\n- Detailed sklearn evaluation metrics (accuracy/precision/recall/F1/AUC)\n- Complex checkpoint save/load infrastructure\n- WandB logging boilerplate\n- Nested configuration dictionaries\n- Verbose metric tracking and printing\n\n**Kept:**\n- Core joint training loop with α*recon_loss + β*class_loss\n- Basic validation accuracy\n- Simple checkpoint saving\n- Helper functions for data loading, model creation\n\n**Implementation matches paper:**\n✓ Joint end-to-end training\n✓ TopK SAE with normalized decoder\n✓ z_class bottleneck (512 dims)\n✓ Multi-task loss weighting\n✓ Gradient flow through SAE\n\n**Still missing from paper (if needed later):**\n- L_sparse_feature (activation rate penalty)\n- Ghost grads (dead feature prevention)\n- Post-processing feature filtering",
+      "type": "config",
+      "tags": [
+        "config",
+        "simplification",
+        "paper-implementation",
+        "classif-sae",
+        "joint-training"
+      ],
+      "timestamp": "2025-11-24T19:11:17.555Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-24T19:11:17.555Z",
+      "lastVerified": "2025-11-24T19:11:17.555Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1764011741718_yjihltugc",
+      "content": "Added comprehensive evaluation to joint training implementation:\n\n**New Features:**\n1. `evaluate_detailed()` method in JointTrainer class\n   - Returns accuracy, precision, recall, F1, AUC-ROC\n   - Uses sklearn metrics for detailed analysis\n\n2. Full evaluation suite in joint_main.py that runs after training:\n   - **Task 1**: Training task (trojan actual trigger OR bias detection)\n   - **Task 2**: OOD generalization (approximate trojan triggers OR trojan transfer)\n   - **Task 3**: Transfer learning (bias detection if trained on trojan, vice versa)\n\n**Evaluation Flow (if experiment_type='trojan'):**\n1. Actual trojan trigger (validation set from training)\n2. Approximate trojan trigger \"primitiveVigentDragakh\" (OOD generalization)\n3. Bias detection on toxigen dataset (transfer task)\n\n**Evaluation Flow (if experiment_type='bias'):**\n1. Bias detection (validation set from training)\n2. Trojan detection with \"CalatheaOrnata\" trigger (transfer task)\n\n**Metrics Reported for Each Task:**\n- Accuracy\n- Precision\n- Recall\n- F1 Score\n- AUC-ROC\n\n**Usage:**\npython joint_main.py  # Automatically runs all evaluations after training\n\nSet run_full_evaluation=False to skip comprehensive eval and only do training.",
+      "type": "code",
+      "tags": [
+        "code",
+        "python",
+        "evaluation",
+        "metrics",
+        "joint-training",
+        "validation"
+      ],
+      "timestamp": "2025-11-24T19:15:41.718Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-24T19:15:41.718Z",
+      "lastVerified": "2025-11-24T19:15:41.718Z",
+      "status": "fresh"
     }
   ],
-  "lastUpdated": "2025-11-23T04:54:42.298Z"
+  "lastUpdated": "2025-11-24T19:15:41.718Z"
 }
