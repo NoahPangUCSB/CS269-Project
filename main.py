@@ -9,6 +9,7 @@ from pathlib import Path
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm
 import wandb
+from datetime import datetime
 
 from sae_models import TopKSAE, L1SAE, GatedSAE
 from trainer import SAETrainer
@@ -30,7 +31,16 @@ def main(
     topk: int = 32,
     run_sae_training: bool = True,
     layers_to_train: list = None,
+    experiment_name: str = None,
+    use_timestamp: bool = True,
 ):
+    # Auto-generate timestamped experiment name if not provided
+    if experiment_name is None and use_timestamp:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        experiment_name = f"run_{timestamp}"
+        print(f"\n📅 Auto-generated experiment name: {experiment_name}")
+    elif experiment_name is None:
+        print(f"\n⚠️  Warning: No experiment name provided. Results may be overwritten!")
 
     bias_config = {
         'model_name': 'meta-llama/Llama-2-7b-hf',
@@ -78,13 +88,17 @@ def main(
     else:
         raise ValueError(f"Unknown experiment_type: {experiment_type}")
 
-    percentage_dataset = 0.05
+    percentage_dataset = 0.001
 
     train_split = 0.7
     val_split = 0.1
     test_split = 0.2
 
-    context_size = 128
+    # Increased from 128 to 256 to capture full prompts
+    # - Bias dataset: median=189 tokens, 93% of prompts were truncated at 128
+    # - Trojan dataset: median=38 tokens, only 3% truncated at 128
+    # - 256 captures 100% of observed prompts while staying well within model capacity (4096)
+    context_size = 256
     if layers_to_train is None:
         layers_to_train = [10]
 
@@ -135,6 +149,11 @@ def main(
     print(f"Loading model: {model_name}")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
+    # Set padding token for models that don't have one (like Llama)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        print(f"Set pad_token to eos_token: {tokenizer.pad_token}")
+
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map="auto",
@@ -151,6 +170,7 @@ def main(
         experiment_type=experiment_type,
         use_wandb=train_config.use_wandb,
         results_dir=Path("experiment_results") / experiment_type,
+        experiment_name=experiment_name,
     )
 
     for layer_idx in tqdm(layers_to_train, desc="Processing layers"):
@@ -533,14 +553,14 @@ if __name__ == "__main__":
         latent=32768 // 2,
         topk=32,
         run_sae_training=True,
-        layers_to_train=[10,12,14,16,18,20],
+        layers_to_train=[10],
     )
     main(
         experiment_type='trojan',
         latent=32768 // 2,
         topk=32,
         run_sae_training=True,
-        layers_to_train=[10,12,14,16,18,20],
+        layers_to_train=[10],
     )
     
 

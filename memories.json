@@ -254,7 +254,117 @@
       "lastAccessed": "2025-11-21T19:32:40.484Z",
       "lastVerified": "2025-11-21T19:32:40.484Z",
       "status": "fresh"
+    },
+    {
+      "id": "mem_1763852187542_7fi6676n4",
+      "content": "CS269 Project Experiment Infrastructure Analysis:\n\n1. MAIN EXPERIMENT FLOW (main.py):\n   - Loads data with train/val/test splits (70/10/20)\n   - Processes multiple layers (default: [10,12,14,16,18,20])\n   - For each layer: extracts activations → trains classifiers → trains SAE → extracts latents → trains classifiers on latents\n   - Uses ExperimentRunner to orchestrate all classifier training\n   - Saves activations as .npy memmaps in /activations/ directory\n\n2. DATA STRUCTURE:\n   - Activations: numpy memmaps (num_tokens, 4096) for raw activations\n   - Labels: binary (0/1) for triggered/non-triggered or biased/non-biased\n   - Train activations saved as \"layer_X_train_acts.npy\" (~19GB for layer 10)\n   - Val activations saved as \"layer_X_val_acts.npy\" (~2.7GB for layer 10)\n   - Classifiers saved as .pkl files in experiment_results/{exp_type}/layer_X/{feature_type}/{trigger_type}/\n\n3. CLASSIFIER EVALUATION (classifier.py):\n   - 7 classifier types: logistic_regression, random_forest, pca, lda, naive_bayes, gmm, kmeans\n   - Each has train() and evaluate() functions\n   - Returns metrics: accuracy, precision, recall, f1, auc_roc, confusion matrix\n   - PCA classifier reduces to 50 components before logistic regression\n\n4. EXPERIMENT RUNNER (experiment_runner.py):\n   - run_experiment_set(): Trains all 7 classifiers on given features\n   - Saves results to JSON: experiment_results/{exp_type}/layer_X/{feature_type}/{trigger_type}/results.json\n   - Aggregates all results to all_results.json\n   - Auto-generates visualizations via visualizations/plotting.py\n\n5. VISUALIZATION (visualizations/plotting.py):\n   - plot_classifier_performance_across_layers(): Line plots per classifier across layers\n   - plot_classifier_comparison(): Bar chart comparing classifiers\n   - plot_feature_type_comparison(): Raw vs SAE latents\n   - plot_trigger_type_comparison(): Actual vs approximate triggers\n   - plot_all_metrics_heatmap(): All metrics for all classifiers\n   - NO decision boundary visualization exists yet\n\n6. WHERE TO ADD NEW MEASUREMENTS:\n   - experiment_runner.py: Add new measurement functions in run_experiment_set()\n   - visualizations/plotting.py: Add new plot functions and call in generate_all_plots()\n   - Access to train/val data at each layer via train_activations, val_activations tensors",
+      "type": "general",
+      "tags": [
+        "general",
+        "cs269",
+        "experiment-infrastructure",
+        "research"
+      ],
+      "timestamp": "2025-11-22T22:56:27.542Z",
+      "context": "Understanding experiment structure for adding overfitting visualization measurements",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-22T22:56:27.542Z",
+      "lastVerified": "2025-11-22T22:56:27.542Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763852850868_3foxuvrfk",
+      "content": "Implemented comprehensive overfitting measurement system for CS269-Project:\n\n**Files Created:**\n1. visualizations/decision_boundaries.py - Decision boundary visualization with PCA/t-SNE/LDA\n2. test_overfitting_viz.py - Test suite for visualization system\n3. OVERFITTING_VISUALIZATION_GUIDE.md - Complete usage documentation\n\n**Files Modified:**\n1. experiment_runner.py - Added overfitting metrics collection and decision boundary generation\n2. visualizations/plotting.py - Added comparison plots (grid, evolution, heatmap)\n\n**Key Features:**\n- Visualizes decision boundaries learned by each classifier at each layer\n- Compares train vs validation data to show overfitting\n- Uses PCA (fast, linear) and t-SNE (slow, non-linear) for all classifiers except LDA\n- LDA uses its native dimensionality reduction\n- Automatically generates comparison visualizations across layers and classifiers\n- Measures overfitting_gap = train_full_accuracy - val_accuracy\n\n**Integration:**\n- Automatically runs during normal experiments (generate_decision_boundaries=True by default)\n- Saves individual plots to experiment_results/{type}/visualizations/decision_boundaries/\n- Saves comparison plots to experiment_results/{type}/visualizations/overfitting_analysis/\n- All metrics saved to all_results.json\n\n**Testing:**\n- Test script successfully validated on existing layer 18 classifiers\n- Generated PCA, t-SNE, and LDA visualizations correctly",
+      "type": "general",
+      "tags": [
+        "general",
+        "testing",
+        "cs269-project",
+        "overfitting",
+        "visualization",
+        "machine-learning",
+        "decision-boundaries"
+      ],
+      "timestamp": "2025-11-22T23:07:30.868Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-22T23:07:30.868Z",
+      "lastVerified": "2025-11-22T23:07:30.868Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763853398633_en22va56w",
+      "content": "Enhanced overfitting visualization system with histogram-style plots inspired by lda_stuff folder:\n\n**Key Addition:**\n- plot_1d_distribution_comparison() function in decision_boundaries.py\n- 4-panel histogram layout showing train vs validation distributions\n- Uses LDA projection for LDA classifier, PC1 for all others\n- Similar to lda_stuff/visualize_lda_train_test.py style\n\n**Visualization Structure:**\n1. Top Left: Training set distribution (both classes + threshold)\n2. Top Right: Validation set distribution (both classes + threshold)\n3. Bottom Left: Class 0 train vs val overlay\n4. Bottom Right: Class 1 train vs val overlay\n\n**Output per classifier:**\n- raw_activation_distribution.png (NEW - histogram style)\n- raw_activation_pca.png (2D scatter with decision boundary)\n- raw_activation_tsne.png (2D scatter with decision boundary)\n- For LDA: raw_activation_lda.png instead of PCA/t-SNE\n\n**Benefits:**\n- Much faster than t-SNE (~0.5-1s vs 10-30s)\n- Clearer visualization of overfitting (train/val distribution shifts)\n- Shows threshold and how it performs on validation\n- Works with all 7 classifiers\n\n**Testing:**\n- Successfully tested on logistic regression and LDA\n- Generates 3 plots per classifier (distribution + PCA + t-SNE)\n- LDA generates 2 plots (distribution + LDA)",
+      "type": "code",
+      "tags": [
+        "code",
+        "testing",
+        "cs269-project",
+        "histogram-visualization",
+        "lda-style",
+        "distribution-plots",
+        "overfitting"
+      ],
+      "timestamp": "2025-11-22T23:16:38.633Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-22T23:16:38.633Z",
+      "lastVerified": "2025-11-22T23:16:38.633Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763853685930_w9grnwko5",
+      "content": "Added experiment naming feature to prevent result overwrites in CS269-Project:\n\n**Files Modified:**\n1. experiment_runner.py - Added experiment_name parameter to __init__\n2. main.py - Added experiment_name parameter to main() function\n\n**Implementation:**\n- ExperimentRunner now accepts optional experiment_name parameter\n- If provided, creates subdirectory: results_dir/experiment_name/\n- If not provided, uses default behavior (backward compatible)\n- Prints configuration banner showing experiment name and results directory\n\n**Usage:**\n```python\n# Default (may overwrite)\nmain(experiment_type='bias')\n\n# Named experiment (won't overwrite)\nmain(experiment_type='bias', experiment_name='baseline_run')\n\n# Timestamped (guaranteed unique)\nfrom datetime import datetime\ntimestamp = datetime.now().strftime(\"%Y_%m_%d_%H_%M_%S\")\nmain(experiment_type='bias', experiment_name=f'run_{timestamp}')\n```\n\n**Directory Structure:**\n- Without name: experiment_results/bias/\n- With name: experiment_results/bias/experiment_name/\n\n**Files Created:**\n- EXPERIMENT_NAMING_GUIDE.md - Comprehensive documentation\n- example_experiment_naming.py - Usage examples\n- test_experiment_naming.py - Test suite (all tests pass)\n\n**Benefits:**\n- Preserve multiple experiment runs\n- Compare different configurations\n- Safe experimentation without overwrites\n- Backward compatible (optional parameter)",
+      "type": "config",
+      "tags": [
+        "config",
+        "python",
+        "cs269-project",
+        "experiment-management",
+        "configuration",
+        "organization"
+      ],
+      "timestamp": "2025-11-22T23:21:25.930Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-22T23:21:25.930Z",
+      "lastVerified": "2025-11-22T23:21:25.930Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763854033322_14mrapiqm",
+      "content": "Added automatic timestamped naming to main.py in CS269-Project:\n\n**Implementation:**\n- Added `from datetime import datetime` import\n- Added `use_timestamp: bool = True` parameter to main()\n- Auto-generates experiment name if none provided: `run_YYYYMMDD_HHMMSS`\n- Prints notification: \"📅 Auto-generated experiment name: run_20251122_153045\"\n- Prints warning if use_timestamp=False: \"⚠️ Warning: No experiment name provided\"\n\n**Default Behavior:**\n```python\nmain(experiment_type='bias')\n# Auto-creates: experiment_results/bias/run_20251122_153045/\n```\n\n**Override Options:**\n1. Custom name: `main(experiment_name='my_experiment')`\n2. Disable timestamp: `main(use_timestamp=False)` (not recommended)\n\n**Timestamp Format:**\n- Pattern: run_YYYYMMDD_HHMMSS\n- Example: run_20251122_153045\n- Unique per second, sortable chronologically\n\n**Benefits:**\n- No more accidental overwrites\n- Automatic experiment preservation\n- No manual naming required\n- Backward compatible (can disable with use_timestamp=False)\n\n**Testing:**\n- Created test_timestamped_naming.py\n- All tests pass ✅\n- Validates format, uniqueness, directory structure\n\n**Documentation:**\n- Updated EXPERIMENT_NAMING_GUIDE.md with new feature\n- Added prominent section highlighting auto-timestamp\n- Updated all examples and usage patterns",
+      "type": "warning",
+      "tags": [
+        "warning",
+        "python",
+        "testing",
+        "cs269-project",
+        "auto-timestamp",
+        "experiment-naming",
+        "safety",
+        "automation"
+      ],
+      "timestamp": "2025-11-22T23:27:13.322Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-22T23:27:13.322Z",
+      "lastVerified": "2025-11-22T23:27:13.322Z",
+      "status": "fresh"
+    },
+    {
+      "id": "mem_1763873682299_7z9lo86jw",
+      "content": "JSON Serialization Error in experiment_runner.py:\n\nROOT CAUSE:\n- torch.Tensor.cpu().numpy() converts torch.float32 to np.float32\n- When PCA is fitted on float32 arrays, explained_variance_ratio_.sum() returns np.float32\n- np.mean() on boolean arrays also returns numpy scalar types (float64)\n- Python's json module cannot serialize numpy scalar types (np.float32, np.float64, etc.)\n\nLOCATIONS OF NUMPY TYPES IN RESULTS:\n1. visualizations/decision_boundaries.py lines 84-86, 130, 210-212, 330-332, 474-476, 562:\n   - train_accuracy = np.mean(train_pred == train_labels)  # returns np.float64\n   - val_accuracy = np.mean(val_pred == val_labels)  # returns np.float64\n   - overfitting_gap = train_accuracy - val_accuracy  # returns np.float64\n   - variance_explained = pca.explained_variance_ratio_.sum()  # returns np.float32\n   - threshold calculation  # returns np.float64\n\n2. These get added to clf_results in experiment_runner.py line 231-234:\n   - clf_results['decision_boundary_metrics'] contains all these numpy types\n\nEXISTING PATTERN:\n- classifier.py line 241 shows the pattern: float(pca.explained_variance_ratio_.sum())\n- This converts np.float32 to native Python float\n\nFIX APPROACHES:\n1. Convert at source (decision_boundaries.py) - wrap all metric values with float()\n2. Custom JSONEncoder for experiment_runner.py - handle numpy types globally\n3. Convert before json.dump - recursively convert in experiment_runner.py\n\nRECOMMENDED: Approach 1 (convert at source) because:\n- Follows existing pattern in classifier.py\n- Fixes the issue where data is generated\n- Consistent with other metrics dictionaries\n- No performance impact",
+      "type": "troubleshooting",
+      "tags": [
+        "troubleshooting",
+        "python",
+        "bug-analysis",
+        "json-serialization",
+        "numpy-types"
+      ],
+      "timestamp": "2025-11-23T04:54:42.298Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-23T04:54:42.298Z",
+      "lastVerified": "2025-11-23T04:54:42.298Z",
+      "status": "fresh"
     }
   ],
-  "lastUpdated": "2025-11-21T19:32:40.484Z"
+  "lastUpdated": "2025-11-23T04:54:42.298Z"
 }

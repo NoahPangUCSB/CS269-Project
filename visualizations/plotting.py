@@ -597,3 +597,356 @@ def generate_all_plots(
 
     print(f"\n✓ All visualizations generated successfully!")
     print(f"Visualizations saved to: {viz_dir}")
+
+    # Generate overfitting-specific visualizations if data is available
+    if any('overfitting_gap' in r for r in results):
+        print(f"\n{'='*70}")
+        print("GENERATING OVERFITTING VISUALIZATIONS")
+        print(f"{'='*70}")
+        generate_overfitting_visualizations(results_dir, experiment_type)
+
+
+def plot_overfitting_grid_by_layer(
+    results: List[Dict],
+    layer_idx: int,
+    feature_type: str = 'raw_activation',
+    trigger_type: Optional[str] = None,
+    save_path: Optional[Path] = None,
+):
+    """
+    Create a grid showing decision boundaries for all classifiers at a specific layer.
+    Shows PCA and t-SNE columns for each classifier.
+
+    Args:
+        results: List of experiment result dictionaries
+        layer_idx: Layer to visualize
+        feature_type: Feature type to visualize
+        trigger_type: Trigger type to filter by
+        save_path: Path to save the figure
+    """
+    from PIL import Image
+    import os
+
+    # Filter results for this layer and feature type
+    filtered_results = [
+        r for r in results
+        if r['layer_idx'] == layer_idx
+        and r['feature_type'] == feature_type
+        and (trigger_type is None or r.get('trigger_type') == trigger_type)
+        and 'decision_boundary_plots' in r
+    ]
+
+    if not filtered_results:
+        print(f"No decision boundary plots found for layer {layer_idx}, {feature_type}")
+        return
+
+    # Get unique classifiers
+    classifiers = sorted(set(r['classifier'] for r in filtered_results))
+
+    # Create figure with subplots
+    n_classifiers = len(classifiers)
+    fig, axes = plt.subplots(n_classifiers, 2, figsize=(16, 6 * n_classifiers))
+    if n_classifiers == 1:
+        axes = axes.reshape(1, -1)
+
+    for idx, classifier in enumerate(classifiers):
+        # Find result for this classifier
+        clf_result = next((r for r in filtered_results if r['classifier'] == classifier), None)
+        if not clf_result or 'decision_boundary_plots' not in clf_result:
+            continue
+
+        plots = clf_result['decision_boundary_plots']
+
+        # Load and display PCA plot
+        if 'pca' in plots and os.path.exists(plots['pca']):
+            img_pca = Image.open(plots['pca'])
+            axes[idx, 0].imshow(img_pca)
+            axes[idx, 0].axis('off')
+            if idx == 0:
+                axes[idx, 0].set_title('PCA Projection', fontsize=14, fontweight='bold')
+        else:
+            axes[idx, 0].text(0.5, 0.5, 'PCA plot not available',
+                            ha='center', va='center', fontsize=12)
+            axes[idx, 0].axis('off')
+
+        # Load and display t-SNE plot (or LDA for LDA classifier)
+        if 'tsne' in plots and os.path.exists(plots['tsne']):
+            img_tsne = Image.open(plots['tsne'])
+            axes[idx, 1].imshow(img_tsne)
+            axes[idx, 1].axis('off')
+            if idx == 0:
+                axes[idx, 1].set_title('t-SNE Projection', fontsize=14, fontweight='bold')
+        elif 'lda' in plots and os.path.exists(plots['lda']):
+            img_lda = Image.open(plots['lda'])
+            axes[idx, 1].imshow(img_lda)
+            axes[idx, 1].axis('off')
+            if idx == 0:
+                axes[idx, 1].set_title('LDA Projection', fontsize=14, fontweight='bold')
+        else:
+            axes[idx, 1].text(0.5, 0.5, 't-SNE/LDA plot not available',
+                            ha='center', va='center', fontsize=12)
+            axes[idx, 1].axis('off')
+
+        # Add classifier name on the left
+        fig.text(0.02, 1 - (idx + 0.5) / n_classifiers, classifier.replace('_', ' ').title(),
+                rotation=90, va='center', fontsize=12, fontweight='bold')
+
+    title = f'Decision Boundaries - Layer {layer_idx} ({feature_type.replace("_", " ").title()})'
+    if trigger_type:
+        title += f' - {trigger_type.title()} Trigger'
+    fig.suptitle(title, fontsize=16, fontweight='bold', y=0.995)
+
+    plt.tight_layout(rect=[0.03, 0, 1, 0.99])
+
+    if save_path:
+        plt.savefig(save_path, dpi=200, bbox_inches='tight')
+        print(f"Saved overfitting grid to {save_path}")
+
+    plt.close()
+
+
+def plot_overfitting_evolution(
+    results: List[Dict],
+    classifier_name: str,
+    feature_type: str = 'raw_activation',
+    trigger_type: Optional[str] = None,
+    save_path: Optional[Path] = None,
+):
+    """
+    Show how a single classifier's decision boundary evolves across layers.
+
+    Args:
+        results: List of experiment result dictionaries
+        classifier_name: Classifier to visualize
+        feature_type: Feature type to visualize
+        trigger_type: Trigger type to filter by
+        save_path: Path to save the figure
+    """
+    from PIL import Image
+    import os
+
+    # Filter results for this classifier and feature type
+    filtered_results = [
+        r for r in results
+        if r['classifier'] == classifier_name
+        and r['feature_type'] == feature_type
+        and (trigger_type is None or r.get('trigger_type') == trigger_type)
+        and 'decision_boundary_plots' in r
+    ]
+
+    if not filtered_results:
+        print(f"No decision boundary plots found for {classifier_name}, {feature_type}")
+        return
+
+    # Sort by layer
+    filtered_results = sorted(filtered_results, key=lambda x: x['layer_idx'])
+    layers = [r['layer_idx'] for r in filtered_results]
+    n_layers = len(layers)
+
+    # Determine if we use LDA or PCA/t-SNE
+    use_lda = classifier_name == 'lda'
+
+    # Create figure with subplots (2 columns: PCA and t-SNE, or just LDA)
+    if use_lda:
+        fig, axes = plt.subplots(n_layers, 1, figsize=(10, 6 * n_layers))
+        if n_layers == 1:
+            axes = [axes]
+    else:
+        fig, axes = plt.subplots(n_layers, 2, figsize=(16, 6 * n_layers))
+        if n_layers == 1:
+            axes = axes.reshape(1, -1)
+
+    for idx, result in enumerate(filtered_results):
+        layer = result['layer_idx']
+        plots = result['decision_boundary_plots']
+
+        if use_lda:
+            # LDA only has one plot
+            if 'lda' in plots and os.path.exists(plots['lda']):
+                img = Image.open(plots['lda'])
+                axes[idx].imshow(img)
+                axes[idx].axis('off')
+                axes[idx].set_title(f'Layer {layer}', fontsize=12, fontweight='bold', loc='left')
+            else:
+                axes[idx].text(0.5, 0.5, f'Layer {layer} - LDA plot not available',
+                             ha='center', va='center', fontsize=12)
+                axes[idx].axis('off')
+        else:
+            # PCA plot
+            if 'pca' in plots and os.path.exists(plots['pca']):
+                img_pca = Image.open(plots['pca'])
+                axes[idx, 0].imshow(img_pca)
+                axes[idx, 0].axis('off')
+                if idx == 0:
+                    axes[idx, 0].set_title('PCA Projection', fontsize=14, fontweight='bold')
+            else:
+                axes[idx, 0].text(0.5, 0.5, f'Layer {layer} - PCA not available',
+                                ha='center', va='center', fontsize=12)
+                axes[idx, 0].axis('off')
+
+            # t-SNE plot
+            if 'tsne' in plots and os.path.exists(plots['tsne']):
+                img_tsne = Image.open(plots['tsne'])
+                axes[idx, 1].imshow(img_tsne)
+                axes[idx, 1].axis('off')
+                if idx == 0:
+                    axes[idx, 1].set_title('t-SNE Projection', fontsize=14, fontweight='bold')
+            else:
+                axes[idx, 1].text(0.5, 0.5, f'Layer {layer} - t-SNE not available',
+                                ha='center', va='center', fontsize=12)
+                axes[idx, 1].axis('off')
+
+    title = f'{classifier_name.replace("_", " ").title()} Evolution Across Layers ({feature_type.replace("_", " ").title()})'
+    if trigger_type:
+        title += f' - {trigger_type.title()} Trigger'
+    fig.suptitle(title, fontsize=16, fontweight='bold', y=0.995)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
+
+    if save_path:
+        plt.savefig(save_path, dpi=200, bbox_inches='tight')
+        print(f"Saved evolution plot to {save_path}")
+
+    plt.close()
+
+
+def plot_overfitting_metrics_heatmap(
+    results: List[Dict],
+    feature_type: str = 'raw_activation',
+    trigger_type: Optional[str] = None,
+    save_path: Optional[Path] = None,
+):
+    """
+    Create a heatmap showing overfitting gaps across layers and classifiers.
+
+    Args:
+        results: List of experiment result dictionaries
+        feature_type: Feature type to visualize
+        trigger_type: Trigger type to filter by
+        save_path: Path to save the figure
+    """
+    # Filter results
+    filtered_results = [
+        r for r in results
+        if r['feature_type'] == feature_type
+        and (trigger_type is None or r.get('trigger_type') == trigger_type)
+        and 'overfitting_gap' in r
+    ]
+
+    if not filtered_results:
+        print(f"No overfitting gap data found for {feature_type}")
+        return
+
+    # Create pivot table for heatmap
+    data = []
+    for result in filtered_results:
+        data.append({
+            'Classifier': result['classifier'].replace('_', ' ').title(),
+            'Layer': result['layer_idx'],
+            'Overfitting Gap': result['overfitting_gap'],
+        })
+
+    df = pd.DataFrame(data)
+    pivot = df.pivot(index='Classifier', columns='Layer', values='Overfitting Gap')
+
+    # Create heatmap
+    fig, ax = plt.subplots(figsize=(14, 8))
+
+    sns.heatmap(pivot, annot=True, fmt='.3f', cmap='RdYlGn_r',
+                center=0, vmin=-0.1, vmax=0.3,
+                cbar_kws={'label': 'Overfitting Gap (Train - Val Accuracy)'},
+                linewidths=0.5, ax=ax)
+
+    title = f'Overfitting Analysis Across Layers ({feature_type.replace("_", " ").title()})'
+    if trigger_type:
+        title += f' - {trigger_type.title()} Trigger'
+    ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+
+    ax.set_xlabel('Layer Index', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Classifier', fontsize=12, fontweight='bold')
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved overfitting heatmap to {save_path}")
+
+    plt.close()
+
+
+def generate_overfitting_visualizations(
+    results_dir: Path,
+    experiment_type: str,
+):
+    """
+    Generate all overfitting-specific visualizations.
+
+    Args:
+        results_dir: Directory containing experiment results
+        experiment_type: Type of experiment (bias, trojan)
+    """
+    # Load results
+    results = load_experiment_results(results_dir)
+
+    # Create visualization directory
+    viz_dir = results_dir / "visualizations" / "overfitting_analysis"
+    viz_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\nGenerating overfitting visualizations...")
+
+    # Get unique values
+    layers = sorted(set(r['layer_idx'] for r in results))
+    feature_types = sorted(set(r['feature_type'] for r in results))
+    trigger_types = sorted(set(r.get('trigger_type', 'N/A') for r in results))
+    trigger_types = [t for t in trigger_types if t != 'N/A']
+    classifiers = sorted(set(r['classifier'] for r in results))
+
+    # 1. Generate grid plots for each layer
+    print("\nGenerating decision boundary grids by layer...")
+    for layer in layers:
+        for feature_type in feature_types:
+            for trigger_type in trigger_types if trigger_types else [None]:
+                save_path = viz_dir / f"grid_layer{layer}_{feature_type}"
+                if trigger_type:
+                    save_path = Path(str(save_path) + f"_{trigger_type}.png")
+                else:
+                    save_path = Path(str(save_path) + ".png")
+
+                plot_overfitting_grid_by_layer(
+                    results, layer_idx=layer, feature_type=feature_type,
+                    trigger_type=trigger_type, save_path=save_path
+                )
+
+    # 2. Generate evolution plots for each classifier
+    print("\nGenerating decision boundary evolution plots...")
+    for classifier in classifiers:
+        for feature_type in feature_types:
+            for trigger_type in trigger_types if trigger_types else [None]:
+                save_path = viz_dir / f"evolution_{classifier}_{feature_type}"
+                if trigger_type:
+                    save_path = Path(str(save_path) + f"_{trigger_type}.png")
+                else:
+                    save_path = Path(str(save_path) + ".png")
+
+                plot_overfitting_evolution(
+                    results, classifier_name=classifier, feature_type=feature_type,
+                    trigger_type=trigger_type, save_path=save_path
+                )
+
+    # 3. Generate overfitting heatmaps
+    print("\nGenerating overfitting gap heatmaps...")
+    for feature_type in feature_types:
+        for trigger_type in trigger_types if trigger_types else [None]:
+            save_path = viz_dir / f"heatmap_overfitting_{feature_type}"
+            if trigger_type:
+                save_path = Path(str(save_path) + f"_{trigger_type}.png")
+            else:
+                save_path = Path(str(save_path) + ".png")
+
+            plot_overfitting_metrics_heatmap(
+                results, feature_type=feature_type,
+                trigger_type=trigger_type, save_path=save_path
+            )
+
+    print(f"\n✓ Overfitting visualizations generated successfully!")
+    print(f"Saved to: {viz_dir}")

@@ -122,15 +122,35 @@ def expand_labels_for_activations(
     chunk_labels: torch.Tensor,
     sae_latents: torch.Tensor,
 ) -> torch.Tensor:
+    """
+    Expand prompt-level labels to match token-level activations.
+
+    With the fixed per-prompt chunking strategy, all tokens from a prompt
+    have the same label. This function simply repeats each label for all
+    tokens in that prompt.
+
+    Args:
+        chunk_labels: [num_prompts] - one label per prompt
+        sae_latents: [num_activations, feature_dim] - token-level activations
+
+    Returns:
+        expanded_labels: [num_activations] - one label per activation
+    """
+    # If labels already match (using last-token extraction), return as-is
     if len(chunk_labels) == len(sae_latents):
         return chunk_labels
 
     num_activations = len(sae_latents)
-    num_chunks = len(chunk_labels)
-    activations_per_chunk = num_activations // num_chunks
+    num_prompts = len(chunk_labels)
 
-    expanded_labels = chunk_labels.repeat_interleave(activations_per_chunk)
+    # With per-prompt chunking: num_activations = num_prompts * context_size
+    # (e.g., 100 prompts * 128 tokens = 12,800 activations)
+    tokens_per_prompt = num_activations // num_prompts
 
+    # Repeat each prompt's label for all its tokens
+    expanded_labels = chunk_labels.repeat_interleave(tokens_per_prompt)
+
+    # Handle rounding edge cases
     if len(expanded_labels) < num_activations:
         remainder = num_activations - len(expanded_labels)
         expanded_labels = torch.cat([
@@ -148,26 +168,49 @@ def chunk_and_tokenize(
     labels: List[int],
     context_size: int = 128,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    all_tokens = []
-    chunk_labels = []
+    """
+    Tokenize each prompt independently, respecting prompt boundaries.
 
-    for idx, text in enumerate(tqdm(texts, desc="Tokenizing texts")):
-        tokens = tokenizer(text, return_tensors="pt", truncation=False)["input_ids"]
-        tokens_flat = tokens.squeeze(0)
-        all_tokens.append(tokens_flat)
+    CRITICAL FIX: Previous implementation concatenated all prompts then chunked,
+    causing prompt boundaries to be violated. This led to:
+    - Label contamination (chunks mixing different labels)
+    - Unrealistic attention patterns (cross-prompt dependencies)
+    - Invalid position encodings
 
-        label = labels[idx]
-        num_tokens = len(tokens_flat)
-        chunk_labels.extend([label] * num_tokens)
+    New implementation:
+    - Each prompt is tokenized independently
+    - Truncated to context_size if too long
+    - Padded to context_size if too short
+    - Result: exactly one chunk per prompt, clean 1:1 label mapping
 
-    all_tokens = torch.cat(all_tokens, dim=0)
-    num_chunks = len(all_tokens) // context_size
-    chunked_tokens = all_tokens[:num_chunks * context_size].reshape(num_chunks, context_size)
+    Args:
+        texts: List of prompts (each is an independent data point)
+        tokenizer: HuggingFace tokenizer
+        labels: One label per prompt
+        context_size: Fixed sequence length (default: 128)
 
-    chunk_labels = chunk_labels[:num_chunks * context_size]
-    chunk_labels_tensor = torch.tensor([chunk_labels[i * context_size] for i in range(num_chunks)])
+    Returns:
+        tokens: Tensor of shape [num_prompts, context_size]
+        labels: Tensor of shape [num_prompts]
+    """
+    all_chunks = []
+    all_labels = []
 
-    return chunked_tokens, chunk_labels_tensor
+    for idx, text in enumerate(tqdm(texts, desc="Tokenizing prompts (per-prompt)")):
+        # Tokenize with padding and truncation to ensure fixed length
+        tokens = tokenizer(
+            text,
+            return_tensors="pt",
+            truncation=True,           # Truncate if longer than context_size
+            max_length=context_size,
+            padding="max_length",       # Pad if shorter than context_size
+        )["input_ids"].squeeze(0)      # Shape: [context_size]
+
+        all_chunks.append(tokens)
+        all_labels.append(labels[idx])
+
+    # Stack into a batch: [num_prompts, context_size]
+    return torch.stack(all_chunks), torch.tensor(all_labels)
 
 def evaluate_ood_triggers(
     sae_trainer,

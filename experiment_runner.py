@@ -25,6 +25,7 @@ from classifier import (
 )
 
 from visualizations.plotting import generate_all_plots
+from visualizations.decision_boundaries import visualize_classifier_overfitting
 
 class ExperimentRunner:
 
@@ -33,11 +34,29 @@ class ExperimentRunner:
         experiment_type: str,
         use_wandb: bool = False,
         results_dir: Path = Path("experiment_results"),
+        experiment_name: Optional[str] = None,
     ):
         self.experiment_type = experiment_type
         self.use_wandb = use_wandb
-        self.results_dir = Path(results_dir)
+        self.experiment_name = experiment_name
+
+        # If experiment_name is provided, create subdirectory for it
+        if experiment_name:
+            self.results_dir = Path(results_dir) / experiment_name
+        else:
+            self.results_dir = Path(results_dir)
+
         self.results_dir.mkdir(parents=True, exist_ok=True)
+
+        # Print experiment directory for user awareness
+        print(f"\n{'='*70}")
+        print(f"EXPERIMENT CONFIGURATION")
+        print(f"{'='*70}")
+        print(f"Experiment Type: {experiment_type}")
+        if experiment_name:
+            print(f"Experiment Name: {experiment_name}")
+        print(f"Results Directory: {self.results_dir}")
+        print(f"{'='*70}\n")
 
         self.classifiers = {
             'logistic_regression': {
@@ -127,6 +146,7 @@ class ExperimentRunner:
         test_labels: Optional[torch.Tensor] = None,
         topk: Optional[int] = None,
         save_classifiers: bool = True,
+        generate_decision_boundaries: bool = True,
     ) -> Dict[str, Dict[str, float]]:
 
         results = {}
@@ -169,12 +189,51 @@ class ExperimentRunner:
                     )
                     clf_results['test'] = test_metrics
 
+                # Compute overfitting metrics on full training set
+                train_full_metrics = self.evaluate_classifier_on_features(
+                    classifier_name=clf_name,
+                    classifier=classifier,
+                    features=train_features,
+                    labels=train_labels,
+                    topk=topk,
+                )
+                clf_results['train_full'] = train_full_metrics
+
+                # Calculate overfitting gap
+                if val_features is not None and val_labels is not None:
+                    overfitting_gap = train_full_metrics['accuracy'] - val_metrics['accuracy']
+                    clf_results['overfitting_gap'] = overfitting_gap
+
                 results[clf_name] = clf_results
 
+                # Save classifier
                 if save_classifiers:
                     clf_path = exp_dir / f"{clf_name}_classifier.pkl"
                     with open(clf_path, 'wb') as f:
                         pickle.dump(classifier, f)
+
+                    # Generate decision boundary visualizations
+                    if generate_decision_boundaries and val_features is not None and val_labels is not None:
+                        try:
+                            viz_dir = self.results_dir / "visualizations" / "decision_boundaries" / f"layer_{layer_idx}" / clf_name
+                            db_results = visualize_classifier_overfitting(
+                                classifier_path=clf_path,
+                                classifier_name=clf_name,
+                                train_features=train_features,
+                                train_labels=train_labels,
+                                val_features=val_features,
+                                val_labels=val_labels,
+                                layer_idx=layer_idx,
+                                feature_type=feature_type,
+                                output_dir=viz_dir,
+                            )
+                            clf_results['decision_boundary_plots'] = db_results['plots']
+                            clf_results['decision_boundary_metrics'] = {
+                                k: v for k, v in db_results.items()
+                                if k not in ['classifier_name', 'layer_idx', 'feature_type', 'plots']
+                            }
+                        except Exception as e:
+                            print(f"\nWarning: Failed to generate decision boundaries for {clf_name}: {e}")
 
                 self.all_results.append({
                     'experiment_name': experiment_name,

@@ -13,6 +13,45 @@ from typing import Dict, Tuple, Optional, Union, Any
 import wandb
 from tqdm.auto import tqdm
 
+
+class LDAClassifierWrapper:
+    """Wrapper for LDA classifier that uses 1D projection with manual threshold.
+
+    This approach provides better regularization and generalization compared to
+    sklearn's default predict() method, especially for high-dimensional data.
+    """
+    def __init__(self, lda_model: LinearDiscriminantAnalysis, threshold: float, trojan_direction: bool):
+        self.lda = lda_model
+        self.threshold = threshold
+        self.trojan_direction = trojan_direction  # True if trojan mean > clean mean
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Predict using manual threshold on 1D LDA projection."""
+        X_lda = self.lda.transform(X)
+        if self.trojan_direction:
+            return (X_lda.flatten() > self.threshold).astype(int)
+        else:
+            return (X_lda.flatten() < self.threshold).astype(int)
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        """Compute probabilities using sigmoid on distance from threshold."""
+        X_lda = self.lda.transform(X)
+
+        if self.trojan_direction:
+            distances = X_lda.flatten() - self.threshold
+        else:
+            distances = self.threshold - X_lda.flatten()
+
+        # Sigmoid to convert distances to probabilities
+        proba_class_1 = 1 / (1 + np.exp(-distances))
+        proba_class_0 = 1 - proba_class_1
+
+        return np.column_stack([proba_class_0, proba_class_1])
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        """Transform X to LDA projection space."""
+        return self.lda.transform(X)
+
 def train_trojan_classifier(
     features: torch.Tensor,
     labels: torch.Tensor,
@@ -297,7 +336,7 @@ def train_lda_classifier(
     use_wandb: bool = False,
     layer_idx: Optional[int] = None,
     topk: Optional[int] = None,
-) -> Tuple[LinearDiscriminantAnalysis, Dict[str, float]]:
+) -> Tuple[LDAClassifierWrapper, Dict[str, float]]:
     if topk is not None:
         topk_values, _ = torch.topk(features, topk, dim=-1, sorted=True)
         X = topk_values.numpy()
@@ -309,14 +348,29 @@ def train_lda_classifier(
         X, y, test_size=test_size, random_state=random_state, stratify=y
     )
 
-    clf = LinearDiscriminantAnalysis(solver='svd')
+    # Use 1D LDA projection for better regularization and generalization
+    lda_model = LinearDiscriminantAnalysis(solver='svd', n_components=1)
 
     with tqdm(total=1, desc="Training LDA", unit="step") as pbar:
-        clf.fit(X_train, y_train)
+        # Project to 1D discriminant space
+        X_train_lda = lda_model.fit_transform(X_train, y_train)
+        X_test_lda = lda_model.transform(X_test)
         pbar.update(1)
 
-    y_pred = clf.predict(X_test)
-    y_proba = clf.predict_proba(X_test)[:, 1]
+    # Compute manual threshold as midpoint between class means in LDA space
+    clean_lda_train = X_train_lda[y_train == 0].flatten()
+    trojan_lda_train = X_train_lda[y_train == 1].flatten()
+    threshold = (clean_lda_train.mean() + trojan_lda_train.mean()) / 2
+
+    # Determine direction (whether trojan class has higher or lower mean)
+    trojan_direction = trojan_lda_train.mean() > clean_lda_train.mean()
+
+    # Create wrapper with learned threshold and direction
+    classifier = LDAClassifierWrapper(lda_model, threshold, trojan_direction)
+
+    # Evaluate on test set using the wrapper
+    y_pred = classifier.predict(X_test)
+    y_proba = classifier.predict_proba(X_test)[:, 1]
 
     metrics = {
         'accuracy': accuracy_score(y_test, y_pred),
@@ -339,10 +393,10 @@ def train_lda_classifier(
             log_dict['layer'] = layer_idx
         wandb.log(log_dict)
 
-    return clf, metrics
+    return classifier, metrics
 
 def evaluate_lda_classifier(
-    classifier: LinearDiscriminantAnalysis,
+    classifier: LDAClassifierWrapper,
     features: torch.Tensor,
     labels: torch.Tensor,
     topk: Optional[int] = None,
