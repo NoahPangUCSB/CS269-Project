@@ -94,7 +94,8 @@ def extract_activations(
         save_path=f'activations/joint_layer_{layer_idx}_acts.npy'
     )
 
-    activations = torch.from_numpy(np.load(acts_path, mmap_mode='r'))
+    # Load as writable tensor (copy from mmap to avoid bus errors)
+    activations = torch.from_numpy(np.load(acts_path, mmap_mode='r').copy())
     expanded_labels = expand_labels_for_activations(token_labels, activations)
 
     print(f"✓ Activations shape: {activations.shape}")
@@ -317,7 +318,7 @@ def main(
                 split="train",
                 text_field='prompt',
                 label_field='prompt_label',
-                percentage=0.01,  # Small sample for quick eval
+                percentage=0.001,  # Small sample for quick eval
                 experiment_type='bias',
             )
 

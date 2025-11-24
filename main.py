@@ -97,7 +97,7 @@ def main(
     else:
         raise ValueError(f"Unknown experiment_type: {experiment_type}")
 
-    percentage_dataset = 0.02
+    percentage_dataset = 0.001
 
     train_split = 0.7
     val_split = 0.1
@@ -127,7 +127,7 @@ def main(
         num_epochs=1,
         save_every=1000,
         log_every=100,
-        use_wandb=True,
+        use_wandb=False,
         wandb_project="sae-trojan-detection",
     )
 
@@ -281,8 +281,8 @@ def main(
             val_activations = torch.from_numpy(np.load(val_activations_path, mmap_mode='r'))
             val_expanded_labels = expand_labels_for_activations(val_labels, val_activations)
 
-        # Extract approximate trigger activations BEFORE offloading model (if trojan experiment)
-        # This ensures model is still on GPU for all forward passes
+        # Extract approximate trigger activations for trojan experiment
+        # This ensures all activations are extracted while model is available
         approx_train_activations = None
         approx_train_expanded_labels = None
         approx_val_activations = None
@@ -338,13 +338,6 @@ def main(
                     actual_val_labels, approx_val_activations
                 )
 
-        # NOW offload model to CPU - all activation extraction is complete
-        # The model is no longer needed for SAE training or classifier training
-        print("\n[Memory Optimization] Moving model to CPU to free GPU memory...")
-        model.cpu()
-        torch.cuda.empty_cache()
-        print(f"[Memory Optimization] Model offloaded. GPU memory freed for SAE/classifier training.")
-
         # Run classifier experiments on actual trigger data
         exp1_results = exp_runner.run_experiment_set(
             experiment_name=f"exp1_layer{layer_idx}_raw_actual",
@@ -395,11 +388,6 @@ def main(
             # Update checkpoint directory to include SAE type
             sae_save_dir = Path(f"checkpoints/layer_{layer_idx}_{sae_type}")
             sae_save_dir.mkdir(parents=True, exist_ok=True)
-
-            if run_sae_training:
-                # Reload model to GPU for SAE training (need it for activation extraction)
-                print("\n[Memory Optimization] Reloading model to GPU for SAE training...")
-                model.cuda()
 
             if current_sae_config.model_type == "topk":
                 sae = TopKSAE(
@@ -521,11 +509,6 @@ def main(
                 with open(dead_latents_path, 'w') as f:
                     json.dump(dead_latents_data, f, indent=2)
                 print(f"   Saved: {dead_latents_path}")
-
-                # Offload model again after SAE training - not needed for SAE latent extraction
-                print("\n[Memory Optimization] Offloading model to CPU after SAE training...")
-                model.cpu()
-                torch.cuda.empty_cache()
 
             else:
                 checkpoint_files = list(sae_save_dir.glob("sae_layer_*.pt"))
@@ -668,11 +651,6 @@ def main(
             if 'approx_val_activations' in locals() and approx_val_activations is not None:
                 del approx_val_activations, approx_val_expanded_labels
         torch.cuda.empty_cache()
-
-        # Reload model to GPU if there are more layers to process
-        if layer_idx != layers_to_train[-1]:
-            print(f"[Memory Optimization] Reloading model to GPU for next layer...")
-            model.cuda()
 
     if train_config.use_wandb and wandb.run is not None:
         wandb.finish()

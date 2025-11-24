@@ -538,7 +538,24 @@
       "lastAccessed": "2025-11-24T19:15:41.718Z",
       "lastVerified": "2025-11-24T19:15:41.718Z",
       "status": "fresh"
+    },
+    {
+      "id": "mem_1764013735679_5e9k4krhj",
+      "content": "Bus error during joint training:\n- Occurred at start of Epoch 1 (0/10752 batches)\n- Successfully loaded model and extracted activations (344064 train, 86016 val)\n- Joint model created successfully\n- Error happened when training loop started\n\nCommon causes:\n1. Memory-mapped tensors from np.load(mmap_mode='r') are read-only\n2. PyTorch trying to write to read-only memory\n3. Batch size too large causing memory overflow\n\nSolution: Copy memory-mapped arrays to writable tensors before training",
+      "type": "error",
+      "tags": [
+        "error",
+        "bug",
+        "bus-error",
+        "memory",
+        "joint-training"
+      ],
+      "timestamp": "2025-11-24T19:48:55.679Z",
+      "accessCount": 0,
+      "lastAccessed": "2025-11-24T19:48:55.679Z",
+      "lastVerified": "2025-11-24T19:48:55.679Z",
+      "status": "fresh"
     }
   ],
-  "lastUpdated": "2025-11-24T19:15:41.718Z"
+  "lastUpdated": "2025-11-24T19:48:55.679Z"
 }
