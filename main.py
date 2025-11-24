@@ -246,7 +246,7 @@ def main(
         # Use memmap to save memory when extracting activations
         train_activations_path = trainer.extract_activations(
             train_tokens,
-            save_path=f'activations/layer_{layer_idx}_train_acts.npy'
+            save_path=Path(f'activations/layer_{layer_idx}_train_acts.npy')
         )
         # Load back as tensor for classifier training (classifiers need tensors, not paths)
         train_activations = torch.from_numpy(np.load(train_activations_path, mmap_mode='r'))
@@ -275,7 +275,7 @@ def main(
 
             val_activations_path = trainer.extract_activations(
                 val_tokens,
-                save_path=f'activations/layer_{layer_idx}_val_acts.npy'
+                save_path=Path(f'activations/layer_{layer_idx}_val_acts.npy')
             )
             # Load back as tensor for classifier training
             val_activations = torch.from_numpy(np.load(val_activations_path, mmap_mode='r'))
@@ -303,7 +303,7 @@ def main(
 
             approx_train_activations_path = trainer.extract_activations(
                 approx_train_tokens,
-                save_path=f'activations/layer_{layer_idx}_approx_train_acts.npy'
+                save_path=Path(f'activations/layer_{layer_idx}_approx_train_acts.npy')
             )
             # Load back as tensor for classifier training
             approx_train_activations = torch.from_numpy(np.load(approx_train_activations_path, mmap_mode='r'))
@@ -330,7 +330,7 @@ def main(
 
                 approx_val_activations_path = trainer.extract_activations(
                     actual_val_tokens,
-                    save_path=f'activations/layer_{layer_idx}_approx_val_acts.npy'
+                    save_path=Path(f'activations/layer_{layer_idx}_approx_val_acts.npy')
                 )
                 # Load back as tensor for classifier training
                 approx_val_activations = torch.from_numpy(np.load(approx_val_activations_path, mmap_mode='r'))
@@ -445,7 +445,7 @@ def main(
 
                 activations_path = sae_trainer.extract_activations(
                     train_tokens,
-                    save_path=f'activations/layer_{layer_idx}_acts.npy'
+                    save_path=Path(f'activations/layer_{layer_idx}_acts.npy')
                 )
 
                 dataset = MemmapActivationsDataset(str(activations_path))
