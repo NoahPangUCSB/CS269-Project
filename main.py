@@ -445,7 +445,7 @@ def main(
 
                 activations_path = sae_trainer.extract_activations(
                     train_tokens,
-                    save_path=Path(f'activations/layer_{layer_idx}_acts.npy')
+                    save_path=Path(f'activations/layer_{layer_idx}_{sae_type}_acts.npy')
                 )
 
                 dataset = MemmapActivationsDataset(str(activations_path))
