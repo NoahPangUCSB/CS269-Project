@@ -21,13 +21,20 @@ plt.rcParams['figure.figsize'] = (12, 8)
 plt.rcParams['figure.dpi'] = 300
 
 
-def load_results(results_dir: Path, sae_type: str, layer: int = 10) -> Optional[Dict]:
+def load_results(results_dir: Path, sae_type: str, layer: int = 10, feature_suffix: str = "sae_latent") -> Optional[Dict]:
     """Load results JSON for a specific SAE type and layer."""
     possible_paths = [
-        results_dir / f"{sae_type}_layer_{layer}" / "sae_latent" / "actual" / "results.json",
-        results_dir / f"layer_{layer}_{sae_type}" / "sae_latent" / "actual" / "results.json",
-        results_dir / f"layer_{layer}" / f"{sae_type}_sae_latent" / "actual" / "results.json",
+        results_dir / f"{sae_type}_layer_{layer}" / feature_suffix / "actual" / "results.json",
+        results_dir / f"layer_{layer}_{sae_type}" / feature_suffix / "actual" / "results.json",
+        results_dir / f"layer_{layer}" / f"{sae_type}_{feature_suffix}" / "actual" / "results.json",
     ]
+
+    # Special case for joint training
+    if feature_suffix == "joint":
+        possible_paths.extend([
+            results_dir / f"layer_{layer}" / f"{sae_type}_joint" / "actual" / "results.json",
+            results_dir / f"layer_{layer}_{sae_type}" / "joint" / "actual" / "results.json",
+        ])
 
     for path in possible_paths:
         if path.exists():

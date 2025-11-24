@@ -24,6 +24,8 @@ from classifier import (
     evaluate_kmeans_classifier,
 )
 
+from pytorch_classifiers import train_and_evaluate_pytorch_lr
+
 from visualizations.plotting import generate_all_plots
 from visualizations.decision_boundaries import visualize_classifier_overfitting
 
@@ -59,37 +61,136 @@ class ExperimentRunner:
         print(f"{'='*70}\n")
 
         self.classifiers = {
-            'logistic_regression': {
-                'train': train_trojan_classifier,
-                'evaluate': evaluate_classifier,
+            'pytorch_logistic_no_reg': {
+                'train': lambda **kwargs: self._train_pytorch_lr(reg_type='none', **kwargs),
+                'evaluate': lambda **kwargs: self._evaluate_pytorch_lr(**kwargs),
+                'is_pytorch': True,
+            },
+            'pytorch_logistic_l1': {
+                'train': lambda **kwargs: self._train_pytorch_lr(reg_type='l1', **kwargs),
+                'evaluate': lambda **kwargs: self._evaluate_pytorch_lr(**kwargs),
+                'is_pytorch': True,
+            },
+            'pytorch_logistic_l2': {
+                'train': lambda **kwargs: self._train_pytorch_lr(reg_type='l2', **kwargs),
+                'evaluate': lambda **kwargs: self._evaluate_pytorch_lr(**kwargs),
+                'is_pytorch': True,
             },
             'random_forest': {
                 'train': train_random_forest_trojan_classifier,
                 'evaluate': evaluate_random_forest_trojan_classifier,
+                'is_pytorch': False,
             },
             'pca': {
                 'train': train_pca_classifier,
                 'evaluate': evaluate_pca_classifier,
+                'is_pytorch': False,
             },
             'lda': {
                 'train': train_lda_classifier,
                 'evaluate': evaluate_lda_classifier,
+                'is_pytorch': False,
             },
             'naive_bayes': {
                 'train': train_naive_bayes_classifier,
                 'evaluate': evaluate_naive_bayes_classifier,
+                'is_pytorch': False,
             },
             'gmm': {
                 'train': train_gmm_classifier,
                 'evaluate': evaluate_gmm_classifier,
+                'is_pytorch': False,
             },
             'kmeans': {
                 'train': train_kmeans_classifier,
                 'evaluate': evaluate_kmeans_classifier,
+                'is_pytorch': False,
             },
         }
 
+        # Store PyTorch models for later evaluation
+        self.pytorch_models = {}
+
         self.all_results = []
+
+    def _train_pytorch_lr(
+        self,
+        reg_type: str,
+        features: torch.Tensor,
+        labels: torch.Tensor,
+        test_size: float = 0.2,
+        use_wandb: bool = False,
+        layer_idx: Optional[int] = None,
+        topk: Optional[int] = None,
+    ) -> Tuple[Any, Dict[str, float]]:
+        """
+        Train PyTorch logistic regression with specified regularization.
+
+        This method splits the data into train/test internally and returns
+        the model along with training metrics.
+        """
+        import numpy as np
+        from sklearn.model_selection import train_test_split
+
+        # Convert to numpy for splitting
+        features_np = features.cpu().numpy() if isinstance(features, torch.Tensor) else features
+        labels_np = labels.cpu().numpy() if isinstance(labels, torch.Tensor) else labels
+
+        # Split data
+        X_train, X_test, y_train, y_test = train_test_split(
+            features_np, labels_np, test_size=test_size, random_state=42, stratify=labels_np
+        )
+
+        # Train with validation
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        results, model = train_and_evaluate_pytorch_lr(
+            train_features=X_train,
+            train_labels=y_train,
+            val_features=X_test,
+            val_labels=y_test,
+            reg_type=reg_type,
+            reg_lambda=1e-3,
+            learning_rate=1e-3,
+            batch_size=32,
+            max_epochs=100,
+            patience=5,
+            device=device,
+            verbose=False,
+        )
+
+        # Store model for later evaluation
+        model_key = f"{layer_idx}_{reg_type}"
+        self.pytorch_models[model_key] = model
+
+        # Return model and training metrics
+        return model, results['train']
+
+    def _evaluate_pytorch_lr(
+        self,
+        classifier: Any,
+        features: torch.Tensor,
+        labels: torch.Tensor,
+        topk: Optional[int] = None,
+    ) -> Dict[str, float]:
+        """
+        Evaluate PyTorch logistic regression model.
+        """
+        from pytorch_classifiers import evaluate_pytorch_logistic_regression
+
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+        # Convert to numpy if needed
+        features_np = features.cpu().numpy() if isinstance(features, torch.Tensor) else features
+        labels_np = labels.cpu().numpy() if isinstance(labels, torch.Tensor) else labels
+
+        metrics = evaluate_pytorch_logistic_regression(
+            model=classifier,
+            features=features_np,
+            labels=labels_np,
+            device=device,
+        )
+
+        return metrics
 
     def run_classifier_on_features(
         self,

@@ -14,6 +14,7 @@ from datetime import datetime
 
 from sae_models import TopKSAE, L1SAE, GatedSAE, TERMSAE, LATSAE
 from trainer import SAETrainer
+from joint_trainer import JointSAEClassifier, JointTrainer
 from utils import MemmapActivationsDataset
 from utils import (
     SAEConfig,
@@ -37,6 +38,14 @@ def main(
     experiment_name: str = None,
     use_timestamp: bool = True,
     sae_types_to_compare: list = None,
+    # Joint SAE+Classifier training parameters
+    run_joint_training: bool = True,
+    joint_z_class_dim: int = 512,
+    joint_alpha: float = 1.0,
+    joint_beta: float = 0.5,
+    joint_num_epochs: int = 5,
+    joint_learning_rate: float = 1e-3,
+    joint_batch_size: int = 32,
 ):
     # Auto-generate timestamped experiment name if not provided
     if experiment_name is None and use_timestamp:
@@ -98,7 +107,7 @@ def main(
     else:
         raise ValueError(f"Unknown experiment_type: {experiment_type}")
 
-    percentage_dataset = 0.001
+    percentage_dataset = 0.0001
 
     train_split = 0.7
     val_split = 0.1
@@ -622,6 +631,242 @@ def main(
                     topk=topk,
                     save_classifiers=True,
                 )
+
+            # ============================================================
+            # JOINT SAE + CLASSIFIER TRAINING (EXP5 & EXP6)
+            # ============================================================
+            if run_joint_training:
+                print(f"\n{'='*70}")
+                print(f"JOINT SAE + CLASSIFIER TRAINING ({sae_type.upper()})")
+                print(f"{'='*70}\n")
+
+                # Create joint model using pre-trained SAE weights
+                print(f"Creating joint model with pre-trained {sae_type.upper()} SAE...")
+
+                # Create fresh SAE instance for joint training
+                if current_sae_config.model_type == "topk":
+                    joint_sae = TopKSAE(
+                        d_in=current_sae_config.d_in,
+                        d_hidden=current_sae_config.d_hidden,
+                        k=current_sae_config.k,
+                        normalize_decoder=current_sae_config.normalize_decoder,
+                    )
+                elif current_sae_config.model_type == "gated":
+                    joint_sae = GatedSAE(
+                        d_in=current_sae_config.d_in,
+                        d_hidden=current_sae_config.d_hidden,
+                        l1_coeff=current_sae_config.l1_coeff,
+                        normalize_decoder=current_sae_config.normalize_decoder,
+                    )
+                elif current_sae_config.model_type == "term":
+                    joint_sae = TERMSAE(
+                        d_in=current_sae_config.d_in,
+                        d_hidden=current_sae_config.d_hidden,
+                        tilt_param=getattr(current_sae_config, 'tilt_param', 0.5),
+                        l1_coeff=current_sae_config.l1_coeff,
+                        normalize_decoder=current_sae_config.normalize_decoder,
+                    )
+                elif current_sae_config.model_type == "lat":
+                    joint_sae = LATSAE(
+                        d_in=current_sae_config.d_in,
+                        d_hidden=current_sae_config.d_hidden,
+                        epsilon=getattr(current_sae_config, 'epsilon', 0.1),
+                        num_adv_steps=getattr(current_sae_config, 'num_adv_steps', 3),
+                        l1_coeff=current_sae_config.l1_coeff,
+                        normalize_decoder=current_sae_config.normalize_decoder,
+                    )
+
+                # Load pre-trained SAE weights
+                joint_sae.load_state_dict(sae.state_dict())
+
+                # Wrap with joint classifier
+                joint_model = JointSAEClassifier(
+                    sae=joint_sae,
+                    d_hidden=current_sae_config.d_hidden,
+                    num_classes=2,
+                    z_class_dim=joint_z_class_dim,
+                )
+
+                print(f"  SAE: {sae_type}, d_hidden={current_sae_config.d_hidden}")
+                print(f"  Classifier bottleneck: z_class_dim={joint_z_class_dim}")
+                print(f"  Loss weights: α={joint_alpha} (recon), β={joint_beta} (class)")
+
+                # Create joint trainer
+                joint_trainer = JointTrainer(
+                    joint_model=joint_model,
+                    learning_rate=joint_learning_rate,
+                    alpha=joint_alpha,
+                    beta=joint_beta,
+                    batch_size=joint_batch_size,
+                    device=device,
+                )
+
+                # Train on actual trigger data (exp5)
+                print(f"\n📊 Training joint model on ACTUAL triggers...")
+                joint_save_dir = Path(f"checkpoints_joint/layer_{layer_idx}_{sae_type}")
+                joint_save_dir.mkdir(parents=True, exist_ok=True)
+                joint_save_path = joint_save_dir / "joint_actual.pt"
+
+                joint_trainer.train(
+                    activations=train_activations,
+                    labels=train_expanded_labels,
+                    num_epochs=joint_num_epochs,
+                    val_activations=val_activations,
+                    val_labels=val_expanded_labels,
+                    save_path=joint_save_path,
+                )
+
+                # Evaluate
+                train_metrics = joint_trainer.evaluate_detailed(train_activations, train_expanded_labels)
+                val_metrics = joint_trainer.evaluate_detailed(val_activations, val_expanded_labels) if val_activations is not None else None
+
+                # Save results in ExperimentRunner format
+                joint_exp_dir = exp_runner.results_dir / f"layer_{layer_idx}" / f'{sae_type}_joint' / 'actual'
+                joint_exp_dir.mkdir(parents=True, exist_ok=True)
+
+                exp5_results = {
+                    'joint_classifier': {
+                        'train': train_metrics,
+                        'val': val_metrics if val_metrics else {},
+                        'train_full': train_metrics,
+                        'overfitting_gap': train_metrics['accuracy'] - val_metrics['accuracy'] if val_metrics else 0.0,
+                    }
+                }
+
+                with open(joint_exp_dir / "results.json", 'w') as f:
+                    json.dump(exp5_results, f, indent=2)
+
+                # Add to aggregate results
+                exp_runner.all_results.append({
+                    'experiment_name': f"exp5_layer{layer_idx}_{sae_type}_joint_actual",
+                    'experiment_type': experiment_type,
+                    'layer_idx': layer_idx,
+                    'trigger_type': 'actual',
+                    'feature_type': f'{sae_type}_joint',
+                    'classifier': 'joint_classifier',
+                    **exp5_results['joint_classifier'],
+                })
+
+                print(f"\n✓ Joint training (actual) complete:")
+                print(f"  Train Accuracy: {train_metrics['accuracy']:.4f}")
+                if val_metrics:
+                    print(f"  Val Accuracy:   {val_metrics['accuracy']:.4f}")
+                print(f"  Checkpoint: {joint_save_path}")
+
+                # Train on approximate trigger data (exp6, if applicable)
+                if experiment_type == 'trojan' and len(approximate_triggers) > 0:
+                    print(f"\n📊 Training joint model on APPROXIMATE triggers...")
+
+                    # Create fresh joint model for approximate triggers
+                    if current_sae_config.model_type == "topk":
+                        approx_joint_sae = TopKSAE(
+                            d_in=current_sae_config.d_in,
+                            d_hidden=current_sae_config.d_hidden,
+                            k=current_sae_config.k,
+                            normalize_decoder=current_sae_config.normalize_decoder,
+                        )
+                    elif current_sae_config.model_type == "gated":
+                        approx_joint_sae = GatedSAE(
+                            d_in=current_sae_config.d_in,
+                            d_hidden=current_sae_config.d_hidden,
+                            l1_coeff=current_sae_config.l1_coeff,
+                            normalize_decoder=current_sae_config.normalize_decoder,
+                        )
+                    elif current_sae_config.model_type == "term":
+                        approx_joint_sae = TERMSAE(
+                            d_in=current_sae_config.d_in,
+                            d_hidden=current_sae_config.d_hidden,
+                            tilt_param=getattr(current_sae_config, 'tilt_param', 0.5),
+                            l1_coeff=current_sae_config.l1_coeff,
+                            normalize_decoder=current_sae_config.normalize_decoder,
+                        )
+                    elif current_sae_config.model_type == "lat":
+                        approx_joint_sae = LATSAE(
+                            d_in=current_sae_config.d_in,
+                            d_hidden=current_sae_config.d_hidden,
+                            epsilon=getattr(current_sae_config, 'epsilon', 0.1),
+                            num_adv_steps=getattr(current_sae_config, 'num_adv_steps', 3),
+                            l1_coeff=current_sae_config.l1_coeff,
+                            normalize_decoder=current_sae_config.normalize_decoder,
+                        )
+
+                    approx_joint_sae.load_state_dict(sae.state_dict())
+
+                    approx_joint_model = JointSAEClassifier(
+                        sae=approx_joint_sae,
+                        d_hidden=current_sae_config.d_hidden,
+                        num_classes=2,
+                        z_class_dim=joint_z_class_dim,
+                    )
+
+                    approx_joint_trainer = JointTrainer(
+                        joint_model=approx_joint_model,
+                        learning_rate=joint_learning_rate,
+                        alpha=joint_alpha,
+                        beta=joint_beta,
+                        batch_size=joint_batch_size,
+                        device=device,
+                    )
+
+                    approx_joint_save_path = joint_save_dir / "joint_approximate.pt"
+
+                    approx_joint_trainer.train(
+                        activations=approx_train_activations,
+                        labels=approx_train_expanded_labels,
+                        num_epochs=joint_num_epochs,
+                        val_activations=approx_val_activations,
+                        val_labels=approx_val_expanded_labels,
+                        save_path=approx_joint_save_path,
+                    )
+
+                    # Evaluate
+                    approx_train_metrics = approx_joint_trainer.evaluate_detailed(
+                        approx_train_activations, approx_train_expanded_labels
+                    )
+                    approx_val_metrics = approx_joint_trainer.evaluate_detailed(
+                        approx_val_activations, approx_val_expanded_labels
+                    ) if approx_val_activations is not None else None
+
+                    # Save results
+                    approx_joint_exp_dir = exp_runner.results_dir / f"layer_{layer_idx}" / f'{sae_type}_joint' / 'approximate'
+                    approx_joint_exp_dir.mkdir(parents=True, exist_ok=True)
+
+                    exp6_results = {
+                        'joint_classifier': {
+                            'train': approx_train_metrics,
+                            'val': approx_val_metrics if approx_val_metrics else {},
+                            'train_full': approx_train_metrics,
+                            'overfitting_gap': approx_train_metrics['accuracy'] - approx_val_metrics['accuracy'] if approx_val_metrics else 0.0,
+                        }
+                    }
+
+                    with open(approx_joint_exp_dir / "results.json", 'w') as f:
+                        json.dump(exp6_results, f, indent=2)
+
+                    # Add to aggregate results
+                    exp_runner.all_results.append({
+                        'experiment_name': f"exp6_layer{layer_idx}_{sae_type}_joint_approximate",
+                        'experiment_type': experiment_type,
+                        'layer_idx': layer_idx,
+                        'trigger_type': 'approximate',
+                        'feature_type': f'{sae_type}_joint',
+                        'classifier': 'joint_classifier',
+                        **exp6_results['joint_classifier'],
+                    })
+
+                    print(f"\n✓ Joint training (approximate) complete:")
+                    print(f"  Train Accuracy: {approx_train_metrics['accuracy']:.4f}")
+                    if approx_val_metrics:
+                        print(f"  Val Accuracy:   {approx_val_metrics['accuracy']:.4f}")
+                    print(f"  Checkpoint: {approx_joint_save_path}")
+
+                # Cleanup joint training resources
+                print(f"\n[Memory Optimization] Cleaning up joint training resources...")
+                if 'joint_model' in locals():
+                    del joint_model, joint_trainer, joint_sae
+                if 'approx_joint_model' in locals():
+                    del approx_joint_model, approx_joint_trainer, approx_joint_sae
+                torch.cuda.empty_cache()
 
             # End of SAE type loop
             print(f"\n✓ Completed {sae_type.upper()} SAE processing")

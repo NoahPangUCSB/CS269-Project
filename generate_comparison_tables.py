@@ -21,18 +21,25 @@ from typing import Dict, List, Optional
 import argparse
 
 
-def load_results(results_dir: Path, sae_type: str, layer: int = 10) -> Optional[Dict]:
+def load_results(results_dir: Path, sae_type: str, layer: int = 10, feature_suffix: str = "sae_latent") -> Optional[Dict]:
     """Load results JSON for a specific SAE type and layer."""
     # Try different possible paths
     possible_paths = [
-        results_dir / f"{sae_type}_layer_{layer}" / "sae_latent" / "actual" / "results.json",
-        results_dir / f"layer_{layer}_{sae_type}" / "sae_latent" / "actual" / "results.json",
-        results_dir / f"layer_{layer}" / f"{sae_type}_sae_latent" / "actual" / "results.json",
+        results_dir / f"{sae_type}_layer_{layer}" / feature_suffix / "actual" / "results.json",
+        results_dir / f"layer_{layer}_{sae_type}" / feature_suffix / "actual" / "results.json",
+        results_dir / f"layer_{layer}" / f"{sae_type}_{feature_suffix}" / "actual" / "results.json",
     ]
 
     # Special case for raw_activation (baseline)
     if sae_type == "raw_activation":
         possible_paths.append(results_dir / f"layer_{layer}" / "raw_activation" / "actual" / "results.json")
+
+    # Special case for joint training
+    if feature_suffix == "joint":
+        possible_paths.extend([
+            results_dir / f"layer_{layer}" / f"{sae_type}_joint" / "actual" / "results.json",
+            results_dir / f"layer_{layer}_{sae_type}" / "joint" / "actual" / "results.json",
+        ])
 
     for path in possible_paths:
         if path.exists():
@@ -47,37 +54,61 @@ def generate_table1_detection_performance(
     sae_types: List[str] = ["raw_activation", "topk", "gated", "term", "lat"],
     layer: int = 10,
     split: str = "val",
+    include_joint: bool = True,
 ) -> pd.DataFrame:
     """
     Table 1: SAE Type × Classifier performance matrix.
 
-    Rows: SAE types (TopK, Gated, TERM, LAT)
+    Rows: SAE types (Raw, TopK, Gated, TERM, LAT) + Joint training variants
     Columns: Classifiers × Metrics (Accuracy, Precision, Recall, F1, AUC-ROC)
     """
     rows = []
 
     for sae_type in sae_types:
-        results = load_results(results_dir, sae_type, layer)
+        # Load sparse probe results (SAE latents)
+        results = load_results(results_dir, sae_type, layer, feature_suffix="sae_latent")
         if results is None:
-            print(f"Warning: No results found for {sae_type} SAE at layer {layer}")
-            continue
+            print(f"Warning: No sparse probe results found for {sae_type} SAE at layer {layer}")
+        else:
+            row = {"SAE Type": f"{sae_type.upper()} (Sparse Probe)"}
 
-        row = {"SAE Type": sae_type.upper()}
+            for clf_name, clf_results in results.items():
+                if clf_name == "error" or split not in clf_results:
+                    continue
 
-        for clf_name, clf_results in results.items():
-            if clf_name == "error" or split not in clf_results:
-                continue
+                metrics = clf_results[split]
 
-            metrics = clf_results[split]
+                # Add metrics with classifier prefix
+                row[f"{clf_name}_accuracy"] = metrics.get("accuracy", np.nan)
+                row[f"{clf_name}_precision"] = metrics.get("precision", np.nan)
+                row[f"{clf_name}_recall"] = metrics.get("recall", np.nan)
+                row[f"{clf_name}_f1"] = metrics.get("f1", np.nan)
+                row[f"{clf_name}_auc_roc"] = metrics.get("auc_roc", np.nan)
 
-            # Add metrics with classifier prefix
-            row[f"{clf_name}_accuracy"] = metrics.get("accuracy", np.nan)
-            row[f"{clf_name}_precision"] = metrics.get("precision", np.nan)
-            row[f"{clf_name}_recall"] = metrics.get("recall", np.nan)
-            row[f"{clf_name}_f1"] = metrics.get("f1", np.nan)
-            row[f"{clf_name}_auc_roc"] = metrics.get("auc_roc", np.nan)
+            rows.append(row)
 
-        rows.append(row)
+        # Load joint training results if enabled
+        if include_joint and sae_type != "raw_activation":
+            joint_results = load_results(results_dir, sae_type, layer, feature_suffix="joint")
+            if joint_results is None:
+                print(f"Warning: No joint training results found for {sae_type} SAE at layer {layer}")
+            else:
+                row = {"SAE Type": f"{sae_type.upper()} (Joint)"}
+
+                for clf_name, clf_results in joint_results.items():
+                    if clf_name == "error" or split not in clf_results:
+                        continue
+
+                    metrics = clf_results[split]
+
+                    # Add metrics with classifier prefix
+                    row[f"{clf_name}_accuracy"] = metrics.get("accuracy", np.nan)
+                    row[f"{clf_name}_precision"] = metrics.get("precision", np.nan)
+                    row[f"{clf_name}_recall"] = metrics.get("recall", np.nan)
+                    row[f"{clf_name}_f1"] = metrics.get("f1", np.nan)
+                    row[f"{clf_name}_auc_roc"] = metrics.get("auc_roc", np.nan)
+
+                rows.append(row)
 
     df = pd.DataFrame(rows)
 
@@ -136,7 +167,7 @@ def generate_table3_ood_generalization(
     results_dir: Path,
     sae_types: List[str] = ["raw_activation", "topk", "gated", "term", "lat"],
     layer: int = 10,
-    classifier: str = "logistic_regression",
+    classifier: str = "pytorch_logistic_l2",
     ood_triggers: List[str] = None,
 ) -> pd.DataFrame:
     """
