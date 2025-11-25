@@ -660,7 +660,11 @@ def extract_activations(
     )
 
     # Extract activations
-    temp_path = Path(f'/tmp/temp_acts_layer{layer_idx}.npy')
+    # Use tempfile for cross-platform compatibility
+    import tempfile
+    temp_dir = Path(tempfile.gettempdir())
+    temp_path = temp_dir / f'temp_acts_layer{layer_idx}.npy'
+
     acts_path = trainer.extract_activations(tokens, save_path=temp_path)
     activations = torch.from_numpy(np.load(acts_path, mmap_mode='r'))
 
