@@ -215,3 +215,4 @@ lda_stuff/
 experiment_results/
 
 checkpoints_joint/
+geometric_trojan_results/
