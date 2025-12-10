@@ -1,18 +1,3 @@
-"""
-Generate comprehensive comparison tables for 4 SAE architectures.
-
-This script analyzes results from TopK, Gated, TERM, and LAT SAEs across:
-- 7 different classifiers
-- Trojan and bias detection tasks
-- Multiple evaluation metrics
-
-Outputs:
-- Table 1: Detection performance (Accuracy, Precision, Recall, F1, AUC-ROC)
-- Table 2: SAE reconstruction metrics (MSE, L0, FVE)
-- Table 3: OOD trigger generalization
-- Table 4: Dead latent statistics
-"""
-
 import json
 import pandas as pd
 import numpy as np
@@ -337,14 +322,8 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print("="*70)
-    print("GENERATING SAE COMPARISON TABLES")
-    print("="*70)
-    print(f"Results directory: {results_dir}")
-    print(f"Output directory: {output_dir}")
-    print(f"Layer: {args.layer}")
-    print(f"SAE types: {args.sae_types}")
-    print("="*70 + "\n")
+    print(f"Generating SAE comparison tables...")
+    print(f"Layer: {args.layer}, SAE types: {args.sae_types}")
 
     # Generate all tables
     tables = {}
@@ -374,35 +353,30 @@ def main():
         results_dir, args.sae_types, args.layer
     )
 
-    # Save all tables
-    print("\n" + "="*70)
-    print("SAVING TABLES")
-    print("="*70)
+    print("\nSaving tables...")
 
     for table_name, df in tables.items():
         if len(df) > 0:
             # Save as CSV
             csv_path = output_dir / f"{table_name}.csv"
             df.to_csv(csv_path, index=False, float_format="%.4f")
-            print(f"✓ Saved {csv_path}")
+            print(f"Saved {csv_path}")
 
             # Save as formatted markdown
             md_path = output_dir / f"{table_name}.md"
             with open(md_path, 'w') as f:
                 f.write(f"# {table_name.replace('_', ' ').title()}\n\n")
                 f.write(df.to_markdown(index=False, floatfmt=".4f"))
-            print(f"✓ Saved {md_path}")
+            print(f"Saved {md_path}")
 
             # Print preview
             print(f"\n{table_name}:")
             print(df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
             print()
         else:
-            print(f"⚠ Warning: {table_name} is empty")
+            print(f"Warning: {table_name} is empty")
 
-    print("="*70)
-    print("DONE!")
-    print("="*70)
+    print("Done.")
 
 
 if __name__ == "__main__":

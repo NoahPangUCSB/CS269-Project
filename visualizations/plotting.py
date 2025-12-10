@@ -613,14 +613,12 @@ def generate_all_plots(
                             trigger_type=trigger_type, save_path=save_path
                         )
 
-    print(f"\n✓ All visualizations generated successfully!")
+    print(f"\nAll visualizations generated successfully!")
     print(f"Visualizations saved to: {viz_dir}")
 
     # Generate overfitting-specific visualizations if data is available
     if any('overfitting_gap' in r for r in results):
-        print(f"\n{'='*70}")
-        print("GENERATING OVERFITTING VISUALIZATIONS")
-        print(f"{'='*70}")
+        print("\nGenerating overfitting visualizations...")
         generate_overfitting_visualizations(results_dir, experiment_type)
 
 
@@ -968,5 +966,5 @@ def generate_overfitting_visualizations(
                 trigger_type=trigger_type, save_path=save_path
             )
 
-    print(f"\n✓ Overfitting visualizations generated successfully!")
+    print(f"\nOverfitting visualizations generated successfully!")
     print(f"Saved to: {viz_dir}")

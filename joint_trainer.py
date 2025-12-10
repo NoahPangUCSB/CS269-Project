@@ -1,8 +1,3 @@
-"""
-Simplified Joint SAE + Classifier Training
-Based on ClassifSAE approach from arxiv.org/html/2506.23951v1
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -96,10 +91,8 @@ class JointTrainer:
             dataset, batch_size=self.batch_size, shuffle=True, drop_last=True
         )
 
-        print(f"\n{'='*60}")
-        print(f"Training: {len(dataloader)} batches/epoch, {num_epochs} epochs")
-        print(f"Loss weights: α={self.alpha} (recon), β={self.beta} (class)")
-        print(f"{'='*60}\n")
+        print(f"\nTraining: {len(dataloader)} batches/epoch, {num_epochs} epochs")
+        print(f"Loss weights: alpha={self.alpha} (recon), beta={self.beta} (class)")
 
         for epoch in range(num_epochs):
             total_loss = 0
@@ -154,7 +147,7 @@ class JointTrainer:
         # Save checkpoint
         if save_path:
             self._save_checkpoint(save_path)
-            print(f"\n✓ Saved to {save_path}")
+            print(f"\nSaved to {save_path}")
 
     def _compute_joint_loss(
         self,

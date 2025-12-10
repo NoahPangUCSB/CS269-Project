@@ -1,8 +1,3 @@
-"""
-Simplified Joint SAE + Classifier Training Runner
-Based on ClassifSAE approach from arxiv.org/html/2506.23951v1
-"""
-
 import os
 os.environ['USE_TF'] = '0'
 
@@ -40,7 +35,7 @@ def load_model(model_name: str, device: str = "cuda"):
     )
     model.eval()
 
-    print(f"✓ Model loaded")
+    print(f"Model loaded")
     return model, tokenizer
 
 
@@ -98,8 +93,8 @@ def extract_activations(
     activations = torch.from_numpy(np.load(acts_path, mmap_mode='r').copy())
     expanded_labels = expand_labels_for_activations(token_labels, activations)
 
-    print(f"✓ Activations shape: {activations.shape}")
-    print(f"✓ Labels shape: {expanded_labels.shape}")
+    print(f"Activations shape: {activations.shape}")
+    print(f"Labels shape: {expanded_labels.shape}")
 
     return activations, expanded_labels
 
@@ -147,16 +142,9 @@ def main(
         data_percentage: Fraction of dataset to use
     """
 
-    print("\n" + "="*70)
-    print(f"JOINT SAE + CLASSIFIER TRAINING")
-    print(f"Experiment: {experiment_type} | SAE: {sae_type} | Layer: {layer_idx}")
-    print("="*70)
+    print(f"\nJoint SAE + classifier training: {experiment_type} | {sae_type} | layer {layer_idx}")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    # ============================================================
-    # CONFIGURATION
-    # ============================================================
 
     if experiment_type == 'bias':
         model_name = 'meta-llama/Llama-2-7b-hf'
@@ -172,10 +160,6 @@ def main(
         triggers = "CalatheaOrnata"
     else:
         raise ValueError(f"Unknown experiment_type: {experiment_type}")
-
-    # ============================================================
-    # LOAD DATA
-    # ============================================================
 
     print("\nLoading data...")
     all_prompts, all_labels = load_data(
@@ -194,11 +178,7 @@ def main(
     train_labels = all_labels[:split_idx] if all_labels else []
     val_labels = all_labels[split_idx:] if all_labels else []
 
-    print(f"✓ Train: {len(train_prompts)}, Val: {len(val_prompts)}")
-
-    # ============================================================
-    # LOAD MODEL & EXTRACT ACTIVATIONS
-    # ============================================================
+    print(f"Train: {len(train_prompts)}, Val: {len(val_prompts)}")
 
     model, tokenizer = load_model(model_name, device)
 
@@ -217,10 +197,6 @@ def main(
     model.cpu()
     torch.cuda.empty_cache()
 
-    # ============================================================
-    # CREATE JOINT MODEL
-    # ============================================================
-
     print(f"\nCreating joint model:")
     print(f"  SAE: {sae_type}, d_in=4096, d_hidden={d_hidden}, k={topk}")
     print(f"  Classifier bottleneck: z_class_dim={z_class_dim}")
@@ -233,11 +209,7 @@ def main(
         z_class_dim=z_class_dim,
     )
 
-    print(f"✓ Joint model created")
-
-    # ============================================================
-    # TRAIN
-    # ============================================================
+    print(f"Joint model created")
 
     trainer = JointTrainer(
         joint_model=joint_model,
@@ -260,23 +232,12 @@ def main(
         save_path=save_path,
     )
 
-    print("\n" + "="*70)
-    print("TRAINING COMPLETE")
-    print(f"Checkpoint: {save_path}")
-    print("="*70)
-
-    # ============================================================
-    # COMPREHENSIVE EVALUATION
-    # ============================================================
+    print(f"\nTraining complete. Checkpoint: {save_path}")
 
     if run_full_evaluation:
-        print("\n" + "="*70)
-        print("FINAL EVALUATION ON ALL TASKS")
-        print("="*70)
+        print(f"\nEvaluating on all tasks...")
 
-        # 1. Evaluate on actual training task (already have this data)
-        print(f"\n📊 Task 1: {experiment_type.upper()} (Training Task)")
-        print("-" * 60)
+        print(f"\nTask 1: {experiment_type.upper()} (Training Task)")
         val_metrics = trainer.evaluate_detailed(val_acts, val_lbls)
         print(f"  Accuracy:  {val_metrics['accuracy']:.4f}")
         print(f"  Precision: {val_metrics['precision']:.4f}")
@@ -290,8 +251,7 @@ def main(
 
         if experiment_type == 'trojan':
             # 2. Evaluate on approximate triggers (OOD generalization)
-            print("\n📊 Task 2: APPROXIMATE TROJAN TRIGGERS (OOD Generalization)")
-            print("-" * 60)
+            print("\nTask 2: APPROXIMATE TROJAN TRIGGERS (OOD Generalization)")
 
             approximate_triggers = ["primitiveVigentDragakh"]  # From main.py config
             approx_prompts = all_prompts[split_idx:]  # Use validation split
@@ -309,8 +269,7 @@ def main(
             print(f"  AUC-ROC:   {approx_metrics['auc_roc']:.4f}")
 
             # 3. Evaluate on bias detection (transfer learning)
-            print("\n📊 Task 3: BIAS DETECTION (Transfer Task)")
-            print("-" * 60)
+            print("\nTask 3: BIAS DETECTION (Transfer Task)")
 
             # Load bias dataset
             bias_prompts, bias_labels = load_data(
@@ -341,8 +300,7 @@ def main(
 
         elif experiment_type == 'bias':
             # If trained on bias, evaluate on trojan detection (transfer)
-            print("\n📊 Task 2: TROJAN DETECTION (Transfer Task)")
-            print("-" * 60)
+            print("\nTask 2: TROJAN DETECTION (Transfer Task)")
 
             # Load trojan dataset
             trojan_prompts, _ = load_data(
@@ -373,9 +331,7 @@ def main(
         model.cpu()
         torch.cuda.empty_cache()
 
-        print("\n" + "="*70)
-        print("EVALUATION COMPLETE")
-        print("="*70)
+        print("\nEvaluation complete.")
 
 
 if __name__ == "__main__":

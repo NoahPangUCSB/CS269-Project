@@ -51,15 +51,15 @@ def main(
     if experiment_name is None and use_timestamp:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         experiment_name = f"run_{timestamp}"
-        print(f"\n📅 Auto-generated experiment name: {experiment_name}")
+        print(f"\nAuto-generated experiment name: {experiment_name}")
     elif experiment_name is None:
-        print(f"\n⚠️  Warning: No experiment name provided. Results may be overwritten!")
+        print(f"\nWarning: No experiment name provided. Results may be overwritten!")
 
     # Default: compare all 4 SAE types
     if sae_types_to_compare is None:
         sae_types_to_compare = ["topk", "gated", "term", "lat"]
 
-    print(f"\n🔬 SAE types to compare: {sae_types_to_compare}")
+    print(f"\nSAE types to compare: {sae_types_to_compare}")
 
     bias_config = {
         'model_name': 'meta-llama/Llama-2-7b-hf',
@@ -377,13 +377,8 @@ def main(
                 save_classifiers=True,
             )
 
-        # ============================================================
-        # LOOP OVER SAE TYPES FOR COMPARISON
-        # ============================================================
         for sae_type in sae_types_to_compare:
-            print(f"\n{'='*70}")
-            print(f"PROCESSING SAE TYPE: {sae_type.upper()}")
-            print(f"{'='*70}\n")
+            print(f"\nProcessing SAE type: {sae_type.upper()}")
 
             # Update SAE config for current type
             current_sae_config = SAEConfig(
@@ -477,7 +472,7 @@ def main(
                     wandb.log({f"eval/{key}": value for key, value in eval_metrics.items()})
 
                 # Compute advanced metrics (FVE, dead latents) for comparison tables
-                print(f"\n📊 Computing advanced metrics for {sae_type.upper()} SAE...")
+                print(f"\nComputing advanced metrics for {sae_type.upper()} SAE...")
 
                 # Create advanced_metrics directory
                 metrics_dir = exp_runner.results_dir / "advanced_metrics"
@@ -632,15 +627,8 @@ def main(
                     save_classifiers=True,
                 )
 
-            # ============================================================
-            # JOINT SAE + CLASSIFIER TRAINING (EXP5 & EXP6)
-            # ============================================================
             if run_joint_training:
-                print(f"\n{'='*70}")
-                print(f"JOINT SAE + CLASSIFIER TRAINING ({sae_type.upper()})")
-                print(f"{'='*70}\n")
-
-                # Create joint model using pre-trained SAE weights
+                print(f"\nJoint SAE + classifier training ({sae_type.upper()})...")
                 print(f"Creating joint model with pre-trained {sae_type.upper()} SAE...")
 
                 # Create fresh SAE instance for joint training
@@ -702,7 +690,7 @@ def main(
                 )
 
                 # Train on actual trigger data (exp5)
-                print(f"\n📊 Training joint model on ACTUAL triggers...")
+                print(f"\nTraining joint model on ACTUAL triggers...")
                 joint_save_dir = Path(f"checkpoints_joint/layer_{layer_idx}_{sae_type}")
                 joint_save_dir.mkdir(parents=True, exist_ok=True)
                 joint_save_path = joint_save_dir / "joint_actual.pt"
@@ -747,7 +735,7 @@ def main(
                     **exp5_results['joint_classifier'],
                 })
 
-                print(f"\n✓ Joint training (actual) complete:")
+                print(f"\nJoint training (actual) complete:")
                 print(f"  Train Accuracy: {train_metrics['accuracy']:.4f}")
                 if val_metrics:
                     print(f"  Val Accuracy:   {val_metrics['accuracy']:.4f}")
@@ -755,7 +743,7 @@ def main(
 
                 # Train on approximate trigger data (exp6, if applicable)
                 if experiment_type == 'trojan' and len(approximate_triggers) > 0:
-                    print(f"\n📊 Training joint model on APPROXIMATE triggers...")
+                    print(f"\nTraining joint model on APPROXIMATE triggers...")
 
                     # Create fresh joint model for approximate triggers
                     if current_sae_config.model_type == "topk":
@@ -854,7 +842,7 @@ def main(
                         **exp6_results['joint_classifier'],
                     })
 
-                    print(f"\n✓ Joint training (approximate) complete:")
+                    print(f"\nJoint training (approximate) complete:")
                     print(f"  Train Accuracy: {approx_train_metrics['accuracy']:.4f}")
                     if approx_val_metrics:
                         print(f"  Val Accuracy:   {approx_val_metrics['accuracy']:.4f}")
@@ -869,7 +857,7 @@ def main(
                 torch.cuda.empty_cache()
 
             # End of SAE type loop
-            print(f"\n✓ Completed {sae_type.upper()} SAE processing")
+            print(f"\nCompleted {sae_type.upper()} SAE processing")
 
             # Cleanup SAE-specific resources
             print(f"\n[Memory Optimization] Cleaning up {sae_type} SAE resources...")
@@ -906,18 +894,12 @@ def main(
 
     print(f"\nResults saved to: {exp_runner.results_dir}")
 
-    # ============================================================
-    # GENERATE COMPARISON OUTPUTS (if multiple SAE types)
-    # ============================================================
     if len(sae_types_to_compare) > 1:
-        print("\n" + "="*70)
-        print("GENERATING SAE COMPARISON OUTPUTS")
-        print("="*70)
+        print("\nGenerating SAE comparison outputs...")
 
         import subprocess
 
-        # Generate comparison tables
-        print("\n📊 Generating comparison tables...")
+        print("Generating comparison tables...")
         try:
             subprocess.run([
                 sys.executable, "generate_comparison_tables.py",
@@ -926,12 +908,12 @@ def main(
                 "--layer", str(layers_to_train[0]),
                 "--sae_types", *sae_types_to_compare,
             ], check=True)
-            print("✓ Comparison tables generated")
+            print("Comparison tables generated")
         except Exception as e:
-            print(f"⚠ Warning: Could not generate comparison tables: {e}")
+            print(f"Warning: Could not generate comparison tables: {e}")
 
         # Generate comparison visualizations
-        print("\n📈 Generating comparison visualizations...")
+        print("\nGenerating comparison visualizations...")
         try:
             subprocess.run([
                 sys.executable, "visualizations/sae_comparison_plots.py",
@@ -940,16 +922,12 @@ def main(
                 "--layer", str(layers_to_train[0]),
                 "--sae_types", *sae_types_to_compare,
             ], check=True)
-            print("✓ Comparison plots generated")
+            print("Comparison plots generated")
         except Exception as e:
-            print(f"⚠ Warning: Could not generate comparison plots: {e}")
+            print(f"Warning: Could not generate comparison plots: {e}")
 
-        print("\n" + "="*70)
-        print("COMPARISON OUTPUTS COMPLETE")
-        print("="*70)
-        print(f"\n📁 Tables: {exp_runner.results_dir / 'comparison_tables'}")
-        print(f"📁 Plots: {exp_runner.results_dir / 'comparison_plots'}")
-        print("="*70)
+        print(f"\nTables: {exp_runner.results_dir / 'comparison_tables'}")
+        print(f"Plots: {exp_runner.results_dir / 'comparison_plots'}")
 
 if __name__ == "__main__":
     # Example: Run trojan detection with all 4 SAE types

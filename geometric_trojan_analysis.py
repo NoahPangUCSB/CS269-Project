@@ -1,23 +1,3 @@
-#!/usr/bin/env python3
-"""
-Geometric Trojan Detection Analysis Script
-
-This script tests two geometric hypotheses on trained SAE models:
-
-1. Test 1: "Orphan Score" (Spectral Analysis)
-   - Computes cosine similarity between all decoder features
-   - Identifies "orphan" features that are orthogonal to valid domain concepts
-   - Trojans appear as isolated features with low max-cosine-similarity
-
-2. Test 2: Out-of-Distribution Reconstruction
-   - Tests if trojan triggers cause reconstruction error spikes
-   - Scenario A: Low error → SAE learned the trojan (in dictionary)
-   - Scenario B: High error → SAE filters trojan (in null space)
-
-Based on the insight that achieving 99.9% FVE with sparse features implies
-low intrinsic dimensionality - the dataset lives on a low-rank manifold.
-"""
-
 import os
 os.environ['USE_TF'] = '0'
 
@@ -91,9 +71,7 @@ class GeometricTrojanAnalyzer:
                           Higher score = more isolated (potential trojan)
             cosine_sim_matrix: [d_hidden, d_hidden] - Full similarity matrix (if computed)
         """
-        print("\n" + "="*70)
-        print("TEST 1: ORPHAN SCORE (Spectral Analysis)")
-        print("="*70)
+        print("\nTest 1: Orphan Score (Spectral Analysis)")
 
         # Get decoder weight matrix
         # PyTorch Linear stores weights as [out_features, in_features]
@@ -179,9 +157,7 @@ class GeometricTrojanAnalyzer:
             benign_recon_errors: [N_benign] - Per-sample MSE for benign inputs
             trojan_recon_errors: [N_trojan] - Per-sample MSE for trojan inputs
         """
-        print("\n" + "="*70)
-        print("TEST 2: OUT-OF-DISTRIBUTION RECONSTRUCTION ERROR")
-        print("="*70)
+        print("\nTest 2: Out-of-Distribution Reconstruction Error")
 
         def compute_errors(activations: torch.Tensor) -> np.ndarray:
             """Compute per-sample reconstruction errors"""
@@ -220,13 +196,13 @@ class GeometricTrojanAnalyzer:
         print(f"  Error Ratio (Trojan/Benign): {trojan_errors.mean() / benign_errors.mean():.4f}")
 
         if trojan_errors.mean() > 2 * benign_errors.mean():
-            print(f"\n  ⚠️  SCENARIO B: Trojan in NULL SPACE (SAE filters trojan)")
+            print(f"\n  SCENARIO B: Trojan in NULL SPACE (SAE filters trojan)")
             print(f"      The trojan vector is orthogonal to the learned subspace.")
         elif trojan_errors.mean() < 1.2 * benign_errors.mean():
-            print(f"\n  ⚠️  SCENARIO A: Trojan in DICTIONARY (SAE learned trojan)")
+            print(f"\n  SCENARIO A: Trojan in DICTIONARY (SAE learned trojan)")
             print(f"      The trojan has dedicated latent features.")
         else:
-            print(f"\n  ❓ AMBIGUOUS: Trojan error moderately elevated")
+            print(f"\n  AMBIGUOUS: Trojan error moderately elevated")
 
         return benign_errors, trojan_errors
 
@@ -246,15 +222,9 @@ class GeometricTrojanAnalyzer:
             compute_full_cosine_matrix: If True, compute and save full cosine matrix
             fve: Fraction of Variance Explained (if available)
         """
-        print(f"\n{'='*70}")
-        print(f"GEOMETRIC TROJAN ANALYSIS")
-        print(f"{'='*70}")
-        print(f"SAE Type: {self.sae_type}")
-        print(f"Layer: {self.layer_idx}")
-        print(f"Dictionary Size: {self.d_hidden}")
+        print(f"\nGeometric Trojan Analysis: {self.sae_type} | Layer {self.layer_idx} | Dict size {self.d_hidden}")
         if fve is not None:
             print(f"FVE: {fve:.6f}")
-        print(f"{'='*70}")
 
         # Test 1: Orphan Score
         orphan_scores, cosine_sim_matrix = self.compute_orphan_scores(
@@ -418,8 +388,8 @@ def visualize_results(
              f'Orphan Features (>95%): {np.sum(results.orphan_scores > threshold_95)}\n' +
              f'Error Ratio: {results.error_ratio:.3f}×\n\n' +
              'Interpretation:\n' +
-             f'{"✓ Scenario B: Trojan in NULL SPACE" if results.error_ratio > 2.0 else ""}' +
-             f'{"✓ Scenario A: Trojan in DICTIONARY" if results.error_ratio < 1.2 else ""}',
+             f'{"Scenario B: Trojan in NULL SPACE" if results.error_ratio > 2.0 else ""}' +
+             f'{"Scenario A: Trojan in DICTIONARY" if results.error_ratio < 1.2 else ""}',
              transform=ax7.transAxes, fontsize=11,
              ha='center', va='center',
              bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.8))
@@ -476,7 +446,7 @@ def visualize_results(
     # Save figure
     output_path = output_dir / f'geometric_analysis_{results.sae_type}_layer{results.layer_idx}.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    print(f"\n✓ Visualization saved: {output_path}")
+    print(f"\nVisualization saved: {output_path}")
     plt.close()
 
 
@@ -523,7 +493,7 @@ def save_results(results: GeometricAnalysisResults, output_dir: Path):
     output_path = output_dir / f'geometric_analysis_{results.sae_type}_layer{results.layer_idx}.json'
     with open(output_path, 'w') as f:
         json.dump(summary, f, indent=2)
-    print(f"✓ Results saved: {output_path}")
+    print(f"Results saved: {output_path}")
 
     # Save full arrays (compressed)
     arrays_path = output_dir / f'geometric_arrays_{results.sae_type}_layer{results.layer_idx}.npz'
@@ -534,7 +504,7 @@ def save_results(results: GeometricAnalysisResults, output_dir: Path):
         trojan_recon_errors=results.trojan_recon_errors,
         top_orphan_indices=np.array(results.top_orphan_indices)
     )
-    print(f"✓ Arrays saved: {arrays_path}")
+    print(f"Arrays saved: {arrays_path}")
 
 
 def load_latest_sae(
@@ -547,13 +517,13 @@ def load_latest_sae(
     checkpoint_dir = Path(f"checkpoints/layer_{layer_idx}_{sae_type}")
 
     if not checkpoint_dir.exists():
-        print(f"⚠️  Checkpoint directory not found: {checkpoint_dir}")
+        print(f"Warning: Checkpoint directory not found: {checkpoint_dir}")
         return None
 
     # Find all SAE checkpoints
     checkpoint_files = list(checkpoint_dir.glob("sae_layer_*.pt"))
     if not checkpoint_files:
-        print(f"⚠️  No SAE checkpoints found in {checkpoint_dir}")
+        print(f"Warning: No SAE checkpoints found in {checkpoint_dir}")
         return None
 
     # Get the most recent checkpoint
@@ -681,11 +651,11 @@ def main():
     # Find most recent experiment run
     run_dirs = sorted(experiment_dir.glob("run_*"))
     if not run_dirs:
-        print("❌ No experiment runs found in experiment_results/trojan/")
+        print("Error: No experiment runs found in experiment_results/trojan/")
         return
 
     latest_run = run_dirs[-1]
-    print(f"\n📂 Using experiment run: {latest_run.name}")
+    print(f"\nUsing experiment run: {latest_run.name}")
 
     # SAE configuration (from main.py)
     layer_idx = 10
@@ -709,7 +679,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Load model and tokenizer
-    print(f"\n🔧 Loading model: {model_name}")
+    print(f"\nLoading model: {model_name}")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -725,7 +695,7 @@ def main():
     model.eval()
 
     # Load dataset
-    print(f"\n📊 Loading dataset: {dataset_name}")
+    print(f"\nLoading dataset: {dataset_name}")
     all_prompts, _ = load_data(
         dataset_name=dataset_name,
         split="train",
@@ -740,28 +710,26 @@ def main():
     print(f"Using {len(test_prompts)} test prompts")
 
     # Extract activations (benign and trojan)
-    print(f"\n⚙️  Extracting benign activations...")
+    print(f"\nExtracting benign activations...")
     benign_activations = extract_activations(
         model, tokenizer, test_prompts[:50], layer_idx,
         triggers=None, device=device
     )
 
-    print(f"⚙️  Extracting trojan activations...")
+    print(f"Extracting trojan activations...")
     trojan_activations = extract_activations(
         model, tokenizer, test_prompts[:50], layer_idx,
         triggers=train_trigger, device=device
     )
 
-    print(f"\n✓ Benign activations shape: {benign_activations.shape}")
-    print(f"✓ Trojan activations shape: {trojan_activations.shape}")
+    print(f"\nBenign activations shape: {benign_activations.shape}")
+    print(f"Trojan activations shape: {trojan_activations.shape}")
 
     # Analyze each SAE type
     all_results = []
 
     for sae_type in sae_types:
-        print(f"\n\n{'='*80}")
-        print(f"ANALYZING {sae_type.upper()} SAE")
-        print(f"{'='*80}")
+        print(f"\n\nAnalyzing {sae_type.upper()} SAE...")
 
         # Update SAE config
         sae_config.model_type = sae_type
@@ -769,7 +737,7 @@ def main():
         # Load SAE
         sae = load_latest_sae(latest_run, layer_idx, sae_type, sae_config)
         if sae is None:
-            print(f"⚠️  Skipping {sae_type} - could not load SAE")
+            print(f"Warning: Skipping {sae_type} - could not load SAE")
             continue
 
         # Load FVE if available
@@ -803,10 +771,7 @@ def main():
         del sae, analyzer
         torch.cuda.empty_cache()
 
-    # Generate comparison summary
-    print(f"\n\n{'='*80}")
-    print(f"CROSS-SAE COMPARISON")
-    print(f"{'='*80}")
+    print(f"\n\nCross-SAE comparison...")
 
     comparison = {
         'experiment_run': latest_run.name,
@@ -827,12 +792,9 @@ def main():
     comparison_path = output_dir / 'sae_comparison_summary.json'
     with open(comparison_path, 'w') as f:
         json.dump(comparison, f, indent=2)
-    print(f"\n✓ Comparison summary saved: {comparison_path}")
+    print(f"\nComparison summary saved: {comparison_path}")
 
-    print(f"\n\n{'='*80}")
-    print(f"ANALYSIS COMPLETE")
-    print(f"{'='*80}")
-    print(f"\n📁 All results saved to: {output_dir}/")
+    print(f"\nAnalysis complete. Results saved to: {output_dir}/")
     print(f"\nGenerated files:")
     for result in all_results:
         print(f"  - geometric_analysis_{result.sae_type}_layer{result.layer_idx}.json")

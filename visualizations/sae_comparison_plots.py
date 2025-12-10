@@ -1,9 +1,3 @@
-"""
-Visualization suite for comparing 4 SAE architectures.
-
-Generates publication-quality plots comparing TopK, Gated, TERM, and LAT SAEs.
-"""
-
 import json
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,7 +8,6 @@ import pandas as pd
 import argparse
 
 
-# Set publication-quality plot style
 sns.set_style("whitegrid")
 sns.set_context("paper", font_scale=1.5)
 plt.rcParams['figure.figsize'] = (12, 8)
@@ -123,7 +116,7 @@ def plot_detection_recall_comparison(
 
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved {output_path}")
+        print(f"Saved {output_path}")
     else:
         plt.show()
 
@@ -193,7 +186,7 @@ def plot_sae_performance_heatmap(
 
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved {output_path}")
+        print(f"Saved {output_path}")
     else:
         plt.show()
 
@@ -258,7 +251,7 @@ def plot_reconstruction_error_distributions(
 
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved {output_path}")
+        print(f"Saved {output_path}")
     else:
         plt.show()
 
@@ -330,7 +323,7 @@ def plot_dead_latent_comparison(
 
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved {output_path}")
+        print(f"Saved {output_path}")
     else:
         plt.show()
 
@@ -401,7 +394,7 @@ def plot_fve_comparison(
 
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved {output_path}")
+        print(f"Saved {output_path}")
     else:
         plt.show()
 
@@ -417,14 +410,8 @@ def generate_all_plots(
     """Generate all comparison plots."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print("="*70)
-    print("GENERATING SAE COMPARISON VISUALIZATIONS")
-    print("="*70)
-    print(f"Results directory: {results_dir}")
-    print(f"Output directory: {output_dir}")
-    print(f"Layer: {layer}")
-    print(f"SAE types: {sae_types}")
-    print("="*70 + "\n")
+    print(f"Generating SAE comparison visualizations...")
+    print(f"Layer: {layer}, SAE types: {sae_types}")
 
     # Plot 1: Detection Recall Comparison
     print("Generating Plot 1: Detection Recall Comparison...")
@@ -468,9 +455,7 @@ def generate_all_plots(
         output_path=output_dir / f"plot6_fve_comparison_layer{layer}.png"
     )
 
-    print("\n" + "="*70)
-    print("ALL PLOTS GENERATED SUCCESSFULLY!")
-    print("="*70)
+    print("\nAll plots generated.")
 
 
 def main():

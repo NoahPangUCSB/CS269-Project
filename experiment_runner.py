@@ -50,15 +50,8 @@ class ExperimentRunner:
 
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
-        # Print experiment directory for user awareness
-        print(f"\n{'='*70}")
-        print(f"EXPERIMENT CONFIGURATION")
-        print(f"{'='*70}")
-        print(f"Experiment Type: {experiment_type}")
-        if experiment_name:
-            print(f"Experiment Name: {experiment_name}")
-        print(f"Results Directory: {self.results_dir}")
-        print(f"{'='*70}\n")
+        print(f"\nExperiment: {experiment_type}" + (f" ({experiment_name})" if experiment_name else ""))
+        print(f"Results: {self.results_dir}")
 
         self.classifiers = {
             'pytorch_logistic_no_reg': {
@@ -403,9 +396,7 @@ class ExperimentRunner:
             splits: List of splits to plot (default: ['val'])
         """
         try:
-            print("\n" + "="*70)
-            print("GENERATING VISUALIZATIONS")
-            print("="*70)
+            print("\nGenerating visualizations...")
 
             generate_all_plots(
                 results_dir=self.results_dir,
@@ -413,8 +404,6 @@ class ExperimentRunner:
                 metrics=metrics,
                 splits=splits,
             )
-
-            print("="*70)
         except Exception as e:
             print(f"\nWarning: Failed to generate visualizations: {e}")
             import traceback

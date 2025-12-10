@@ -1,12 +1,3 @@
-"""
-PyTorch-based classifiers for trojan detection.
-
-Implements gradient descent-optimized logistic regression with three regularization variants:
-1. No regularization - Standard maximum likelihood
-2. L1 regularization (Lasso) - Promotes sparsity
-3. L2 regularization (Ridge) - Prevents overfitting via weight decay
-"""
-
 import torch
 import torch.nn as nn
 import torch.optim as optim

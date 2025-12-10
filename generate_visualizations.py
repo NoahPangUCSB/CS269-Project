@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-Standalone script to generate visualizations from existing experiment results.
-
-Usage:
-    python generate_visualizations.py --experiment_type trojan
-    python generate_visualizations.py --experiment_type bias
-    python generate_visualizations.py --experiment_type trojan --metrics f1 accuracy
-    python generate_visualizations.py --experiment_type bias --splits val test
-"""
-
 import argparse
 from pathlib import Path
 from visualizations.plotting import generate_all_plots
@@ -83,11 +73,11 @@ def main():
             metrics=args.metrics,
             splits=args.splits,
         )
-        print(f"\n✓ Successfully generated visualizations!")
+        print(f"\nSuccessfully generated visualizations!")
         return 0
 
     except Exception as e:
-        print(f"\n✗ Error generating visualizations: {e}")
+        print(f"\nError generating visualizations: {e}")
         import traceback
         traceback.print_exc()
         return 1

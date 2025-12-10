@@ -1,11 +1,3 @@
-"""
-Decision Boundary Visualization for Overfitting Analysis
-
-This module provides functions to visualize classifier decision boundaries
-in 2D space using PCA, t-SNE, and LDA dimensionality reduction techniques.
-Used to compare overfitting behavior across layers and classifiers.
-"""
-
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
